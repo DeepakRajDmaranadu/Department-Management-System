@@ -183,6 +183,13 @@ export const DashboardHome = () => {
   const [facultyMarkSearch, setFacultyMarkSearch] = useState("");
   const [facultyConsolidatedSearch, setFacultyConsolidatedSearch] = useState("");
   const [facultyHistorySearch, setFacultyHistorySearch] = useState("");
+  const [assignmentSearch, setAssignmentSearch] = useState("");
+  const [assignmentSort, setAssignmentSort] = useState("dueDateAsc");
+  const [assignmentFilter, setAssignmentFilter] = useState("all");
+  const [submissionSearch, setSubmissionSearch] = useState("");
+  const [submissionSort, setSubmissionSort] = useState("rollAsc");
+  const [submissionFilterStatus, setSubmissionFilterStatus] = useState("all");
+  const [submissionFilterLanguage, setSubmissionFilterLanguage] = useState("all");
 
   // Forms
   const {
@@ -458,6 +465,13 @@ export const DashboardHome = () => {
       setFacultyMarkSearch("");
       setFacultyConsolidatedSearch("");
       setFacultyHistorySearch("");
+      setAssignmentSearch("");
+      setAssignmentSort("dueDateAsc");
+      setAssignmentFilter("all");
+      setSubmissionSearch("");
+      setSubmissionSort("rollAsc");
+      setSubmissionFilterStatus("all");
+      setSubmissionFilterLanguage("all");
 
       fetchColleges();
       fetchCourses();
@@ -1388,6 +1402,90 @@ export const DashboardHome = () => {
   };
 
   const stats = getStats();
+
+  const getFilteredAndSortedAssignments = () => {
+    let list = [...assignments];
+    if (assignmentSearch.trim()) {
+      const q = assignmentSearch.toLowerCase();
+      list = list.filter(a => 
+        a.title.toLowerCase().includes(q) || 
+        (a.description && a.description.toLowerCase().includes(q))
+      );
+    }
+    if (assignmentFilter === "completed") {
+      list = list.filter(a => a.submissions.every(s => s.status === 'submitted'));
+    } else if (assignmentFilter === "pending") {
+      list = list.filter(a => a.submissions.some(s => s.status !== 'submitted'));
+    }
+    list.sort((a, b) => {
+      if (assignmentSort === "dueDateAsc") {
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      } else if (assignmentSort === "dueDateDesc") {
+        return new Date(b.dueDate) - new Date(a.dueDate);
+      } else if (assignmentSort === "titleAsc") {
+        return a.title.localeCompare(b.title);
+      } else if (assignmentSort === "createdAtDesc") {
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      }
+      return 0;
+    });
+    return list;
+  };
+
+  const getFilteredAndSortedSubmissions = () => {
+    if (!selectedAssignment) return [];
+    let list = [...selectedAssignment.submissions];
+    if (submissionSearch.trim()) {
+      const q = submissionSearch.toLowerCase();
+      list = list.filter(sub => {
+        const student = sub.student || {};
+        return (
+          (student.fullName && student.fullName.toLowerCase().includes(q)) ||
+          (student.studentId && student.studentId.toLowerCase().includes(q))
+        );
+      });
+    }
+    if (submissionFilterStatus === "submitted") {
+      list = list.filter(sub => sub.status === "submitted");
+    } else if (submissionFilterStatus === "pending") {
+      list = list.filter(sub => sub.status === "pending");
+    }
+    if (submissionFilterLanguage !== "all") {
+      list = list.filter(sub => {
+        const student = sub.student || {};
+        return (student.language || "").toLowerCase() === submissionFilterLanguage.toLowerCase();
+      });
+    }
+    list.sort((a, b) => {
+      const studentA = a.student || {};
+      const studentB = b.student || {};
+      if (submissionSort === "rollAsc") {
+        return (studentA.studentId || "").localeCompare(studentB.studentId || "");
+      } else if (submissionSort === "rollDesc") {
+        return (studentB.studentId || "").localeCompare(studentA.studentId || "");
+      } else if (submissionSort === "nameAsc") {
+        return (studentA.fullName || "").localeCompare(studentB.fullName || "");
+      } else if (submissionSort === "statusSubmitted") {
+        const valA = a.status === "submitted" ? 1 : 0;
+        const valB = b.status === "submitted" ? 1 : 0;
+        return valB - valA || (studentA.studentId || "").localeCompare(studentB.studentId || "");
+      } else if (submissionSort === "statusPending") {
+        const valA = a.status === "pending" ? 1 : 0;
+        const valB = b.status === "pending" ? 1 : 0;
+        return valB - valA || (studentA.studentId || "").localeCompare(studentB.studentId || "");
+      }
+      return 0;
+    });
+    return list;
+  };
+
+  const getSubmissionsLanguages = () => {
+    if (!selectedAssignment) return [];
+    const langs = selectedAssignment.submissions
+      .map(sub => sub.student?.language)
+      .filter((lang, index, self) => lang && self.indexOf(lang) === index);
+    return langs.sort();
+  };
 
   const onRegisterUser = async (data) => {
     setSuccessMsg(null);
@@ -3037,59 +3135,100 @@ export const DashboardHome = () => {
                           </div>
                         ) : (
                           <div className="space-y-4">
-                            <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-                              {assignments.map((assign) => {
-                                const submittedCount = assign.submissions.filter(s => s.status === 'submitted').length;
-                                const totalCount = assign.submissions.length;
-                                const isSelected = selectedAssignment?._id === assign._id;
-                                
-                                return (
-                                  <div
-                                    key={assign._id}
-                                    className={`p-3 border rounded-lg cursor-pointer transition-all flex flex-col justify-between ${
-                                      isSelected
-                                        ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                                        : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/10'
-                                    }`}
-                                    onClick={() => setSelectedAssignment(assign)}
-                                  >
-                                    <div>
-                                      <div className="flex items-start justify-between">
-                                        <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate pr-2">{assign.title}</h4>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDeleteAssignment(assign._id);
-                                          }}
-                                          className="text-red-500 hover:text-red-700 text-[10px] shrink-0"
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                      <p className="text-[10px] text-zinc-550 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
-                                    </div>
-                                    <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between text-[9px] font-bold text-zinc-500">
-                                      <span>Due: {new Date(assign.dueDate).toLocaleDateString()}</span>
-                                      <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-1.5 py-0.5 rounded">
-                                        {submittedCount} / {totalCount} Submitted
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                            {/* Assignments List Sorting/Filtering Controls */}
+                            <div className="flex flex-col sm:flex-row gap-2 pb-2">
+                              <div className="relative flex-1">
+                                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                                <Input
+                                  type="text"
+                                  placeholder="Search assignments..."
+                                  value={assignmentSearch}
+                                  onChange={(e) => setAssignmentSearch(e.target.value)}
+                                  className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <select
+                                  className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                  value={assignmentFilter}
+                                  onChange={(e) => setAssignmentFilter(e.target.value)}
+                                >
+                                  <option value="all">All Status</option>
+                                  <option value="completed">Completed (All Submitted)</option>
+                                  <option value="pending">Pending Submissions</option>
+                                </select>
+                                <select
+                                  className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                  value={assignmentSort}
+                                  onChange={(e) => setAssignmentSort(e.target.value)}
+                                >
+                                  <option value="dueDateAsc">Due Date (Soonest first)</option>
+                                  <option value="dueDateDesc">Due Date (Latest first)</option>
+                                  <option value="titleAsc">Title (A-Z)</option>
+                                  <option value="createdAtDesc">Created (Newest first)</option>
+                                </select>
+                              </div>
                             </div>
+
+                            {getFilteredAndSortedAssignments().length === 0 ? (
+                              <div className="p-6 text-center text-zinc-500 italic text-xs border border-zinc-250 dark:border-zinc-850 rounded-lg">
+                                No assignments match your search or filter criteria.
+                              </div>
+                            ) : (
+                              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                                {getFilteredAndSortedAssignments().map((assign) => {
+                                  const submittedCount = assign.submissions.filter(s => s.status === 'submitted').length;
+                                  const totalCount = assign.submissions.length;
+                                  const isSelected = selectedAssignment?._id === assign._id;
+                                  
+                                  return (
+                                    <div
+                                      key={assign._id}
+                                      className={`p-3 border rounded-lg cursor-pointer transition-all flex flex-col justify-between ${
+                                        isSelected
+                                          ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                                          : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/10'
+                                      }`}
+                                      onClick={() => setSelectedAssignment(assign)}
+                                    >
+                                      <div>
+                                        <div className="flex items-start justify-between">
+                                          <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate pr-2">{assign.title}</h4>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeleteAssignment(assign._id);
+                                            }}
+                                            className="text-red-500 hover:text-red-700 text-[10px] shrink-0"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-550 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
+                                      </div>
+                                      <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between text-[9px] font-bold text-zinc-500">
+                                        <span>Due: {new Date(assign.dueDate).toLocaleDateString()}</span>
+                                        <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-1.5 py-0.5 rounded">
+                                          {submittedCount} / {totalCount} Submitted
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             {/* Submissions Details table for selected Assignment */}
                             {selectedAssignment && (
                               <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 space-y-3 bg-zinc-50/50 dark:bg-zinc-900/5 animate-in fade-in duration-200">
-                                <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-2">
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-zinc-200 dark:border-zinc-800 pb-2 gap-2">
                                   <div>
                                     <h4 className="text-xs font-bold text-zinc-900 dark:text-white">
                                       Submission Register: {selectedAssignment.title}
                                     </h4>
                                     <p className="text-[10px] text-zinc-500">
-                                      Click toggle buttons to dynamically mark submission status.
+                                      Click toggle buttons to mark submission status.
                                     </p>
                                   </div>
                                   <Button
@@ -3097,11 +3236,55 @@ export const DashboardHome = () => {
                                     variant="outline"
                                     size="xs"
                                     onClick={() => downloadAssignmentExcel(selectedAssignment)}
-                                    className="text-[10px] h-7 px-2 border-emerald-200 hover:border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1"
+                                    className="text-[10px] h-7 px-2 border-emerald-200 hover:border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 self-start"
                                   >
                                     <FileSpreadsheet className="h-3.5 w-3.5" />
                                     <span>Download Excel</span>
                                   </Button>
+                                </div>
+
+                                {/* Submissions Sorting/Filtering Controls */}
+                                <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-4 pb-1">
+                                  <div className="relative">
+                                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                                    <Input
+                                      type="text"
+                                      placeholder="Search student or roll no..."
+                                      value={submissionSearch}
+                                      onChange={(e) => setSubmissionSearch(e.target.value)}
+                                      className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                    />
+                                  </div>
+                                  <select
+                                    className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                    value={submissionFilterStatus}
+                                    onChange={(e) => setSubmissionFilterStatus(e.target.value)}
+                                  >
+                                    <option value="all">All Submissions</option>
+                                    <option value="submitted">Submitted</option>
+                                    <option value="pending">Pending</option>
+                                  </select>
+                                  <select
+                                    className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                    value={submissionFilterLanguage}
+                                    onChange={(e) => setSubmissionFilterLanguage(e.target.value)}
+                                  >
+                                    <option value="all">All Languages</option>
+                                    {getSubmissionsLanguages().map(lang => (
+                                      <option key={lang} value={lang}>{lang.toUpperCase()}</option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                    value={submissionSort}
+                                    onChange={(e) => setSubmissionSort(e.target.value)}
+                                  >
+                                    <option value="rollAsc">Roll Number (Asc)</option>
+                                    <option value="rollDesc">Roll Number (Desc)</option>
+                                    <option value="nameAsc">Name (A-Z)</option>
+                                    <option value="statusSubmitted">Submitted First</option>
+                                    <option value="statusPending">Pending First</option>
+                                  </select>
                                 </div>
 
                                 <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
@@ -3115,29 +3298,37 @@ export const DashboardHome = () => {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {selectedAssignment.submissions.map((sub) => {
-                                        const student = sub.student || {};
-                                        return (
-                                          <tr key={student._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
-                                            <td className="py-2 px-3 font-mono font-bold">{student.studentId || 'N/A'}</td>
-                                            <td className="py-2 px-3 font-medium">{student.fullName || 'Unknown'}</td>
-                                            <td className="py-2 px-3 uppercase text-[10px] font-bold text-zinc-500">{student.language || 'N/A'}</td>
-                                            <td className="py-2 px-3 text-right">
-                                              <button
-                                                type="button"
-                                                onClick={() => handleToggleSubmission(selectedAssignment, student._id, sub.status)}
-                                                className={`px-3 py-1 text-[10px] font-bold rounded-md border transition-all ${
-                                                  sub.status === 'submitted'
-                                                    ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm'
-                                                    : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-555 dark:text-zinc-400 hover:bg-zinc-50'
-                                                }`}
-                                              >
-                                                {sub.status === 'submitted' ? 'Submitted' : 'Pending'}
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
+                                      {getFilteredAndSortedSubmissions().length === 0 ? (
+                                        <tr>
+                                          <td colSpan={4} className="py-8 text-center text-zinc-500 italic text-xs">
+                                            No student submissions match search/filter criteria.
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        getFilteredAndSortedSubmissions().map((sub) => {
+                                          const student = sub.student || {};
+                                          return (
+                                            <tr key={student._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
+                                              <td className="py-2 px-3 font-mono font-bold">{student.studentId || 'N/A'}</td>
+                                              <td className="py-2 px-3 font-medium">{student.fullName || 'Unknown'}</td>
+                                              <td className="py-2 px-3 uppercase text-[10px] font-bold text-zinc-500">{student.language || 'N/A'}</td>
+                                              <td className="py-2 px-3 text-right">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleToggleSubmission(selectedAssignment, student._id, sub.status)}
+                                                  className={`px-3 py-1 text-[10px] font-bold rounded-md border transition-all ${
+                                                    sub.status === 'submitted'
+                                                      ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm'
+                                                      : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-555 dark:text-zinc-400 hover:bg-zinc-50'
+                                                  }`}
+                                                >
+                                                  {sub.status === 'submitted' ? 'Submitted' : 'Pending'}
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })
+                                      )}
                                     </tbody>
                                   </table>
                                 </div>
@@ -3932,59 +4123,100 @@ export const DashboardHome = () => {
                           </div>
                         ) : (
                           <div className="space-y-4">
-                            <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-                              {assignments.map((assign) => {
-                                const submittedCount = assign.submissions.filter(s => s.status === 'submitted').length;
-                                const totalCount = assign.submissions.length;
-                                const isSelected = selectedAssignment?._id === assign._id;
-                                
-                                return (
-                                  <div
-                                    key={assign._id}
-                                    className={`p-3 border rounded-lg cursor-pointer transition-all flex flex-col justify-between ${
-                                      isSelected
-                                        ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                                        : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/10'
-                                    }`}
-                                    onClick={() => setSelectedAssignment(assign)}
-                                  >
-                                    <div>
-                                      <div className="flex items-start justify-between">
-                                        <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate pr-2">{assign.title}</h4>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDeleteAssignment(assign._id);
-                                          }}
-                                          className="text-red-500 hover:text-red-700 text-[10px] shrink-0"
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                      <p className="text-[10px] text-zinc-550 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
-                                    </div>
-                                    <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between text-[9px] font-bold text-zinc-500">
-                                      <span>Due: {new Date(assign.dueDate).toLocaleDateString()}</span>
-                                      <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-1.5 py-0.5 rounded">
-                                        {submittedCount} / {totalCount} Submitted
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                            {/* Assignments List Sorting/Filtering Controls */}
+                            <div className="flex flex-col sm:flex-row gap-2 pb-2">
+                              <div className="relative flex-1">
+                                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                                <Input
+                                  type="text"
+                                  placeholder="Search assignments..."
+                                  value={assignmentSearch}
+                                  onChange={(e) => setAssignmentSearch(e.target.value)}
+                                  className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <select
+                                  className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                  value={assignmentFilter}
+                                  onChange={(e) => setAssignmentFilter(e.target.value)}
+                                >
+                                  <option value="all">All Status</option>
+                                  <option value="completed">Completed (All Submitted)</option>
+                                  <option value="pending">Pending Submissions</option>
+                                </select>
+                                <select
+                                  className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                  value={assignmentSort}
+                                  onChange={(e) => setAssignmentSort(e.target.value)}
+                                >
+                                  <option value="dueDateAsc">Due Date (Soonest first)</option>
+                                  <option value="dueDateDesc">Due Date (Latest first)</option>
+                                  <option value="titleAsc">Title (A-Z)</option>
+                                  <option value="createdAtDesc">Created (Newest first)</option>
+                                </select>
+                              </div>
                             </div>
+
+                            {getFilteredAndSortedAssignments().length === 0 ? (
+                              <div className="p-6 text-center text-zinc-500 italic text-xs border border-zinc-250 dark:border-zinc-850 rounded-lg">
+                                No assignments match your search or filter criteria.
+                              </div>
+                            ) : (
+                              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                                {getFilteredAndSortedAssignments().map((assign) => {
+                                  const submittedCount = assign.submissions.filter(s => s.status === 'submitted').length;
+                                  const totalCount = assign.submissions.length;
+                                  const isSelected = selectedAssignment?._id === assign._id;
+                                  
+                                  return (
+                                    <div
+                                      key={assign._id}
+                                      className={`p-3 border rounded-lg cursor-pointer transition-all flex flex-col justify-between ${
+                                        isSelected
+                                          ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                                          : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/10'
+                                      }`}
+                                      onClick={() => setSelectedAssignment(assign)}
+                                    >
+                                      <div>
+                                        <div className="flex items-start justify-between">
+                                          <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate pr-2">{assign.title}</h4>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeleteAssignment(assign._id);
+                                            }}
+                                            className="text-red-500 hover:text-red-700 text-[10px] shrink-0"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-550 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
+                                      </div>
+                                      <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between text-[9px] font-bold text-zinc-500">
+                                        <span>Due: {new Date(assign.dueDate).toLocaleDateString()}</span>
+                                        <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-1.5 py-0.5 rounded">
+                                          {submittedCount} / {totalCount} Submitted
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             {/* Submissions Details table for selected Assignment */}
                             {selectedAssignment && (
                               <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 space-y-3 bg-zinc-50/50 dark:bg-zinc-900/5 animate-in fade-in duration-200">
-                                <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-2">
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-zinc-200 dark:border-zinc-800 pb-2 gap-2">
                                   <div>
                                     <h4 className="text-xs font-bold text-zinc-900 dark:text-white">
                                       Submission Register: {selectedAssignment.title}
                                     </h4>
-                                    <p className="text-[10px] text-zinc-500">
-                                      Click toggle buttons to dynamically mark submission status.
+                                    <p className="text-[10px] text-zinc-550 dark:text-zinc-500 mt-1">
+                                      Click toggle buttons to mark submission status.
                                     </p>
                                   </div>
                                   <Button
@@ -3992,11 +4224,55 @@ export const DashboardHome = () => {
                                     variant="outline"
                                     size="xs"
                                     onClick={() => downloadAssignmentExcel(selectedAssignment)}
-                                    className="text-[10px] h-7 px-2 border-emerald-200 hover:border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1"
+                                    className="text-[10px] h-7 px-2 border-emerald-200 hover:border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 self-start"
                                   >
                                     <FileSpreadsheet className="h-3.5 w-3.5" />
                                     <span>Download Excel</span>
                                   </Button>
+                                </div>
+
+                                {/* Submissions Sorting/Filtering Controls */}
+                                <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-4 pb-1">
+                                  <div className="relative">
+                                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                                    <Input
+                                      type="text"
+                                      placeholder="Search student or roll no..."
+                                      value={submissionSearch}
+                                      onChange={(e) => setSubmissionSearch(e.target.value)}
+                                      className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                    />
+                                  </div>
+                                  <select
+                                    className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                    value={submissionFilterStatus}
+                                    onChange={(e) => setSubmissionFilterStatus(e.target.value)}
+                                  >
+                                    <option value="all">All Submissions</option>
+                                    <option value="submitted">Submitted</option>
+                                    <option value="pending">Pending</option>
+                                  </select>
+                                  <select
+                                    className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                    value={submissionFilterLanguage}
+                                    onChange={(e) => setSubmissionFilterLanguage(e.target.value)}
+                                  >
+                                    <option value="all">All Languages</option>
+                                    {getSubmissionsLanguages().map(lang => (
+                                      <option key={lang} value={lang}>{lang.toUpperCase()}</option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                                    value={submissionSort}
+                                    onChange={(e) => setSubmissionSort(e.target.value)}
+                                  >
+                                    <option value="rollAsc">Roll Number (Asc)</option>
+                                    <option value="rollDesc">Roll Number (Desc)</option>
+                                    <option value="nameAsc">Name (A-Z)</option>
+                                    <option value="statusSubmitted">Submitted First</option>
+                                    <option value="statusPending">Pending First</option>
+                                  </select>
                                 </div>
 
                                 <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
@@ -4010,29 +4286,37 @@ export const DashboardHome = () => {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {selectedAssignment.submissions.map((sub) => {
-                                        const student = sub.student || {};
-                                        return (
-                                          <tr key={student._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
-                                            <td className="py-2 px-3 font-mono font-bold">{student.studentId || 'N/A'}</td>
-                                            <td className="py-2 px-3 font-medium">{student.fullName || 'Unknown'}</td>
-                                            <td className="py-2 px-3 uppercase text-[10px] font-bold text-zinc-500">{student.language || 'N/A'}</td>
-                                            <td className="py-2 px-3 text-right">
-                                              <button
-                                                type="button"
-                                                onClick={() => handleToggleSubmission(selectedAssignment, student._id, sub.status)}
-                                                className={`px-3 py-1 text-[10px] font-bold rounded-md border transition-all ${
-                                                  sub.status === 'submitted'
-                                                    ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm'
-                                                    : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-555 dark:text-zinc-400 hover:bg-zinc-50'
-                                                }`}
-                                              >
-                                                {sub.status === 'submitted' ? 'Submitted' : 'Pending'}
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
+                                      {getFilteredAndSortedSubmissions().length === 0 ? (
+                                        <tr>
+                                          <td colSpan={4} className="py-8 text-center text-zinc-500 italic text-xs">
+                                            No student submissions match search/filter criteria.
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        getFilteredAndSortedSubmissions().map((sub) => {
+                                          const student = sub.student || {};
+                                          return (
+                                            <tr key={student._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
+                                              <td className="py-2 px-3 font-mono font-bold">{student.studentId || 'N/A'}</td>
+                                              <td className="py-2 px-3 font-medium">{student.fullName || 'Unknown'}</td>
+                                              <td className="py-2 px-3 uppercase text-[10px] font-bold text-zinc-500">{student.language || 'N/A'}</td>
+                                              <td className="py-2 px-3 text-right">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleToggleSubmission(selectedAssignment, student._id, sub.status)}
+                                                  className={`px-3 py-1 text-[10px] font-bold rounded-md border transition-all ${
+                                                    sub.status === 'submitted'
+                                                      ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm'
+                                                      : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-555 dark:text-zinc-400 hover:bg-zinc-50'
+                                                  }`}
+                                                >
+                                                  {sub.status === 'submitted' ? 'Submitted' : 'Pending'}
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })
+                                      )}
                                     </tbody>
                                   </table>
                                 </div>
