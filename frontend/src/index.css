@@ -49,3 +49,19 @@
     font-family: 'Outfit', sans-serif;
   }
 }
+
+/* Premium Medium Thick Borders for all Tables */
+table {
+  border: 2px solid #e4e4e7 !important;
+  border-collapse: collapse !important;
+}
+.dark table {
+  border: 2px solid #27272a !important;
+}
+table th, table td {
+  border: 1.5px solid #e4e4e7 !important;
+}
+.dark table th, .dark table td {
+  border: 1.5px solid #27272a !important;
+}
+
