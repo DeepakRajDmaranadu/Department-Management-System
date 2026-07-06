@@ -1475,20 +1475,32 @@ export const DashboardHome = () => {
   <table>
     <thead>
       <tr>
-        <th class="center">Sl. No.</th>
-        <th>Register Number</th>
-        <th>Student Name</th>
-        <th class="center">Language Choice</th>`;
+        <th rowspan="2" class="center">Sl. No.</th>
+        <th rowspan="2">Register Number</th>
+        <th rowspan="2">Student Name</th>
+        <th rowspan="2" class="center">Language Choice</th>`;
 
     selectedRegularSubjects.forEach(sub => {
-      html += `<th class="center">${sub.subjectId}</th>`;
+      html += `<th colspan="3" class="center">${sub.subjectId}</th>`;
     });
 
     if (showLanguage) {
-      html += `<th class="center">Language</th>`;
+      html += `<th colspan="3" class="center">Language</th>`;
     }
 
-    html += `<th class="right">Overall Attendance (%)</th>
+    html += `<th rowspan="2" class="right">Overall Attendance (%)</th>
+      </tr>
+      <tr>`;
+
+    selectedRegularSubjects.forEach(() => {
+      html += `<th class="center">CT</th><th class="center">AT</th><th class="center">%</th>`;
+    });
+
+    if (showLanguage) {
+      html += `<th class="center">CT</th><th class="center">AT</th><th class="center">%</th>`;
+    }
+
+    html += `
       </tr>
     </thead>
     <tbody>`;
@@ -1503,8 +1515,13 @@ export const DashboardHome = () => {
 
       selectedRegularSubjects.forEach(sub => {
         const subAtt = row.attendance[sub._id];
-        const pct = subAtt ? (subAtt.totalClasses > 0 ? `${subAtt.percentage}%` : '-') : '-';
-        html += `<td class="center">${pct}</td>`;
+        if (!subAtt) {
+          html += `<td class="center">-</td><td class="center">-</td><td class="center">-</td>`;
+        } else if (subAtt.totalClasses === 0) {
+          html += `<td class="center">0</td><td class="center">0</td><td class="center">-</td>`;
+        } else {
+          html += `<td class="center">${subAtt.totalClasses}</td><td class="center">${subAtt.presentCount}</td><td class="center">${subAtt.percentage}%</td>`;
+        }
       });
 
       if (showLanguage) {
@@ -1515,10 +1532,13 @@ export const DashboardHome = () => {
 
         if (studentLangSub) {
           const subAtt = row.attendance[studentLangSub._id];
-          const pct = subAtt ? (subAtt.totalClasses > 0 ? `${subAtt.percentage}%` : '-') : '-';
-          html += `<td class="center">${pct}</td>`;
+          if (!subAtt || subAtt.totalClasses === 0) {
+            html += `<td class="center">0</td><td class="center">0</td><td class="center">-</td>`;
+          } else {
+            html += `<td class="center">${subAtt.totalClasses}</td><td class="center">${subAtt.presentCount}</td><td class="center">${subAtt.percentage}%</td>`;
+          }
         } else {
-          html += `<td class="center">N/A</td>`;
+          html += `<td class="center">N/A</td><td class="center">N/A</td><td class="center">N/A</td>`;
         }
       }
 
@@ -2757,26 +2777,44 @@ export const DashboardHome = () => {
                 </div>
 
                 {/* Table View */}
-                <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
+                <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
-                        <th className="py-2.5 px-3 text-center w-12">Sl. No.</th>
-                        <th className="py-2.5 px-3">Register Number</th>
-                        <th className="py-2.5 px-3">Student Name</th>
-                        <th className="py-2.5 px-3 text-center">Language Choice</th>
+                        <th rowSpan={2} className="py-2.5 px-3 text-center w-12 border-r border-zinc-200 dark:border-zinc-850">Sl. No.</th>
+                        <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Register Number</th>
+                        <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Student Name</th>
+                        <th rowSpan={2} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850">Language Choice</th>
                         
                         {selectedRegularSubjects.map(sub => (
-                          <th key={sub._id} className="py-2.5 px-3 text-center font-mono">
+                          <th key={sub._id} colSpan={3} className="py-1 px-3 text-center font-mono border-b border-r border-zinc-200 dark:border-zinc-850">
                             {sub.subjectId}
                           </th>
                         ))}
                         
                         {showLanguageColumn && (
-                          <th className="py-2.5 px-3 text-center">Language</th>
+                          <th colSpan={3} className="py-1 px-3 text-center border-b border-r border-zinc-200 dark:border-zinc-850">
+                            Language
+                          </th>
                         )}
                         
-                        <th className="py-2.5 px-3 text-right">Overall Attendance</th>
+                        <th rowSpan={2} className="py-2.5 px-3 text-right">Overall Attendance</th>
+                      </tr>
+                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/20 dark:bg-zinc-900/10 text-zinc-505 dark:text-zinc-400 font-semibold text-[10px]">
+                        {selectedRegularSubjects.map(sub => (
+                          <React.Fragment key={sub._id}>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">CT</th>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">AT</th>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-12">%</th>
+                          </React.Fragment>
+                        ))}
+                        {showLanguageColumn && (
+                          <React.Fragment>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">CT</th>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">AT</th>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-12">%</th>
+                          </React.Fragment>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -2799,18 +2837,34 @@ export const DashboardHome = () => {
                             });
 
                             if (!studentLangSub) {
-                              languageCell = <td className="py-2.5 px-3 text-center text-zinc-400 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>;
+                              languageCell = (
+                                <React.Fragment>
+                                  <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>
+                                  <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>
+                                  <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>
+                                </React.Fragment>
+                              );
                             } else {
                               const subAtt = row.attendance[studentLangSub._id];
                               if (!subAtt || subAtt.totalClasses === 0) {
-                                languageCell = <td className="py-2.5 px-3 text-center text-zinc-400 font-semibold">-</td>;
+                                languageCell = (
+                                  <React.Fragment>
+                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">0</td>
+                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">0</td>
+                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 font-semibold">-</td>
+                                  </React.Fragment>
+                                );
                               } else {
                                 languageCell = (
-                                  <td className="py-2.5 px-3 text-center font-mono font-semibold">
-                                    <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
-                                      {subAtt.percentage}%
-                                    </span>
-                                  </td>
+                                  <React.Fragment>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono text-zinc-500">{subAtt.totalClasses}</td>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold text-zinc-650">{subAtt.presentCount}</td>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold">
+                                      <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
+                                        {subAtt.percentage}%
+                                      </span>
+                                    </td>
+                                  </React.Fragment>
                                 );
                               }
                             }
@@ -2818,22 +2872,42 @@ export const DashboardHome = () => {
                           
                           return (
                             <tr key={row._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
-                              <td className="py-2.5 px-3 text-center font-semibold text-zinc-400">{idx + 1}</td>
-                              <td className="py-2.5 px-3 font-mono font-bold text-zinc-900 dark:text-white">{row.studentId}</td>
-                              <td className="py-2.5 px-3 font-medium">{row.fullName}</td>
-                              <td className="py-2.5 px-3 text-center uppercase text-[10px] font-bold text-zinc-500">{row.language || 'N/A'}</td>
+                              <td className="py-2.5 px-3 text-center font-semibold text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">{idx + 1}</td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-zinc-900 dark:text-white border-r border-zinc-100 dark:border-zinc-900">{row.studentId}</td>
+                              <td className="py-2.5 px-3 font-medium border-r border-zinc-100 dark:border-zinc-900">{row.fullName}</td>
+                              <td className="py-2.5 px-3 text-center uppercase text-[10px] font-bold text-zinc-500 border-r border-zinc-100 dark:border-zinc-900">{row.language || 'N/A'}</td>
                               
                               {selectedRegularSubjects.map(sub => {
                                 const subAtt = row.attendance[sub._id];
-                                if (!subAtt) return <td key={sub._id} className="py-2.5 px-3 text-center text-zinc-400">-</td>;
-                                if (subAtt.totalClasses === 0) return <td key={sub._id} className="py-2.5 px-3 text-center text-zinc-400 font-semibold">-</td>;
+                                if (!subAtt) {
+                                  return (
+                                    <React.Fragment key={sub._id}>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">-</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">-</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">-</td>
+                                    </React.Fragment>
+                                  );
+                                }
+                                if (subAtt.totalClasses === 0) {
+                                  return (
+                                    <React.Fragment key={sub._id}>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">0</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">0</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 font-semibold">-</td>
+                                    </React.Fragment>
+                                  );
+                                }
                                 
                                 return (
-                                  <td key={sub._id} className="py-2.5 px-3 text-center font-mono font-semibold">
-                                    <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
-                                      {subAtt.percentage}%
-                                    </span>
-                                  </td>
+                                  <React.Fragment key={sub._id}>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono text-zinc-500">{subAtt.totalClasses}</td>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold text-zinc-650">{subAtt.presentCount}</td>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold">
+                                      <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
+                                        {subAtt.percentage}%
+                                      </span>
+                                    </td>
+                                  </React.Fragment>
                                 );
                               })}
                               
