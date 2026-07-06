@@ -5130,7 +5130,7 @@ export const DashboardHome = () => {
             DMS Dashboard — {user.role === "Admin" ? "System Administration" : `Department: ${user.department || "N/A"} | College: ${user.college || "N/A"}`}
           </p>
         </div>
-        {user.role !== "Faculty" && (
+        {user.role !== "Faculty" && user.role !== "HOD" && (
           <Button
             type="button"
             variant="outline"
@@ -5164,10 +5164,10 @@ export const DashboardHome = () => {
       )}
 
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-7">
-        <div className={`col-span-1 ${recentActivitiesOpen && user.role !== "Faculty" ? "lg:col-span-4" : "lg:col-span-7"} space-y-6 transition-all duration-300`}>
+        <div className={`col-span-1 ${recentActivitiesOpen && user.role !== "Faculty" && user.role !== "HOD" ? "lg:col-span-4" : "lg:col-span-7"} space-y-6 transition-all duration-300`}>
           {renderWorkspace()}
         </div>
-        {recentActivitiesOpen && user.role !== "Faculty" && (
+        {recentActivitiesOpen && user.role !== "Faculty" && user.role !== "HOD" && (
           <div className="col-span-1 lg:col-span-3 animate-in fade-in slide-in-from-right-1 duration-200">
             <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 h-full">
               <CardHeader 
