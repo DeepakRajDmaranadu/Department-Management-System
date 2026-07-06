@@ -205,6 +205,9 @@ export const DashboardHome = () => {
   const [hodSections, setHodSections] = useState([]);
   const [hodSubjects, setHodSubjects] = useState([]);
   const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false);
+  const [hodOrderedSubjectIds, setHodOrderedSubjectIds] = useState([]);
+  const [draggedSubjectIdx, setDraggedSubjectIdx] = useState(null);
+  const [dragOverSubjectIdx, setDragOverSubjectIdx] = useState(null);
 
   // Forms
   const {
@@ -1422,6 +1425,62 @@ export const DashboardHome = () => {
     }
   };
 
+  useEffect(() => {
+    if (!hodConsolidatedData?.subjects) return;
+    const subjectsList = hodConsolidatedData.subjects;
+    
+    const activeIds = [];
+    const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+    const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+
+    // Add selected regular subjects
+    regularSubjects.forEach(sub => {
+      if (hodSelectedSubjectIds.includes(sub._id)) {
+        activeIds.push(sub._id);
+      }
+    });
+
+    // Add language if selected
+    if (hodSelectedSubjectIds.includes("language") && languageSubjects.length > 0) {
+      activeIds.push("language");
+    }
+
+    setHodOrderedSubjectIds(prev => {
+      const filteredPrev = prev.filter(id => activeIds.includes(id));
+      const newIds = activeIds.filter(id => !filteredPrev.includes(id));
+      return [...filteredPrev, ...newIds];
+    });
+  }, [hodConsolidatedData, hodSelectedSubjectIds]);
+
+  const handleDragStart = (e, index) => {
+    setDraggedSubjectIdx(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedSubjectIdx === index) return;
+    setDragOverSubjectIdx(index);
+  };
+
+  const handleDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedSubjectIdx === null || draggedSubjectIdx === index) return;
+
+    setHodOrderedSubjectIds(prev => {
+      const updated = [...prev];
+      const [draggedItem] = updated.splice(draggedSubjectIdx, 1);
+      updated.splice(index, 0, draggedItem);
+      return updated;
+    });
+  };
+
+  const handleDragEnd = () => {
+    setDraggedSubjectIdx(null);
+    setDragOverSubjectIdx(null);
+  };
+
   const getStudentOverallAttendance = (row) => {
     let sumPercentages = 0;
     let count = 0;
@@ -1449,12 +1508,7 @@ export const DashboardHome = () => {
   const downloadHODConsolidatedExcel = () => {
     if (!hodConsolidatedData || !hodConsolidatedData.data || hodConsolidatedData.data.length === 0) return;
 
-    const subjectsList = hodConsolidatedData.subjects || [];
-    const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
-    const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
-
-    const showLanguage = hodSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
-    const selectedRegularSubjects = regularSubjects.filter(s => hodSelectedSubjectIds.includes(s._id));
+    const languageSubjects = hodConsolidatedData.subjects?.filter(s => s.subjectType === 'language') || [];
 
     let html = `<html xmlns:o="urn:schemas-microsoft-excel:office:office" xmlns:x="urn:schemas-microsoft-excel:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
@@ -1480,25 +1534,24 @@ export const DashboardHome = () => {
         <th rowspan="2">Student Name</th>
         <th rowspan="2" class="center">Language Choice</th>`;
 
-    selectedRegularSubjects.forEach(sub => {
-      html += `<th colspan="3" class="center">${sub.subjectId}</th>`;
+    hodOrderedSubjectIds.forEach(subjectId => {
+      if (subjectId === 'language') {
+        html += `<th colspan="3" class="center">Language</th>`;
+      } else {
+        const sub = hodConsolidatedData.subjects.find(s => s._id === subjectId);
+        if (sub) {
+          html += `<th colspan="3" class="center">${sub.subjectId}</th>`;
+        }
+      }
     });
-
-    if (showLanguage) {
-      html += `<th colspan="3" class="center">Language</th>`;
-    }
 
     html += `<th rowspan="2" class="right">Overall Attendance (%)</th>
       </tr>
       <tr>`;
 
-    selectedRegularSubjects.forEach(() => {
+    hodOrderedSubjectIds.forEach(() => {
       html += `<th class="center">CT</th><th class="center">AT</th><th class="center">%</th>`;
     });
-
-    if (showLanguage) {
-      html += `<th class="center">CT</th><th class="center">AT</th><th class="center">%</th>`;
-    }
 
     html += `
       </tr>
@@ -1513,34 +1566,37 @@ export const DashboardHome = () => {
         <td>${row.fullName}</td>
         <td class="center" style="text-transform: uppercase;">${row.language || 'N/A'}</td>`;
 
-      selectedRegularSubjects.forEach(sub => {
-        const subAtt = row.attendance[sub._id];
-        if (!subAtt) {
-          html += `<td class="center">-</td><td class="center">-</td><td class="center">-</td>`;
-        } else if (subAtt.totalClasses === 0) {
-          html += `<td class="center">0</td><td class="center">0</td><td class="center">-</td>`;
-        } else {
-          html += `<td class="center">${subAtt.totalClasses}</td><td class="center">${subAtt.presentCount}</td><td class="center">${subAtt.percentage}%</td>`;
-        }
-      });
+      hodOrderedSubjectIds.forEach(subjectId => {
+        if (subjectId === 'language') {
+          const studentLangSub = languageSubjects.find(sub => {
+            const subAtt = row.attendance[sub._id];
+            return subAtt && subAtt.isEnrolled;
+          });
 
-      if (showLanguage) {
-        const studentLangSub = languageSubjects.find(sub => {
-          const subAtt = row.attendance[sub._id];
-          return subAtt && subAtt.isEnrolled;
-        });
-
-        if (studentLangSub) {
-          const subAtt = row.attendance[studentLangSub._id];
-          if (!subAtt || subAtt.totalClasses === 0) {
-            html += `<td class="center">0</td><td class="center">0</td><td class="center">-</td>`;
+          if (studentLangSub) {
+            const subAtt = row.attendance[studentLangSub._id];
+            if (!subAtt || subAtt.totalClasses === 0) {
+              html += `<td class="center">0</td><td class="center">0</td><td class="center">-</td>`;
+            } else {
+              html += `<td class="center">${subAtt.totalClasses}</td><td class="center">${subAtt.presentCount}</td><td class="center">${subAtt.percentage}%</td>`;
+            }
           } else {
-            html += `<td class="center">${subAtt.totalClasses}</td><td class="center">${subAtt.presentCount}</td><td class="center">${subAtt.percentage}%</td>`;
+            html += `<td class="center">N/A</td><td class="center">N/A</td><td class="center">N/A</td>`;
           }
         } else {
-          html += `<td class="center">N/A</td><td class="center">N/A</td><td class="center">N/A</td>`;
+          const sub = hodConsolidatedData.subjects.find(s => s._id === subjectId);
+          if (sub) {
+            const subAtt = row.attendance[sub._id];
+            if (!subAtt) {
+              html += `<td class="center">-</td><td class="center">-</td><td class="center">-</td>`;
+            } else if (subAtt.totalClasses === 0) {
+              html += `<td class="center">0</td><td class="center">0</td><td class="center">-</td>`;
+            } else {
+              html += `<td class="center">${subAtt.totalClasses}</td><td class="center">${subAtt.presentCount}</td><td class="center">${subAtt.percentage}%</td>`;
+            }
+          }
         }
-      }
+      });
 
       const overallPct = getStudentOverallAttendance(row);
       const overallStr = overallPct === 'N/A' ? '-' : `${overallPct}%`;
@@ -2561,7 +2617,7 @@ export const DashboardHome = () => {
 
         const showLanguageColumn = hodSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
         const selectedRegularSubjects = regularSubjects.filter(s => hodSelectedSubjectIds.includes(s._id));
-        const totalColsCount = 4 + selectedRegularSubjects.length + (showLanguageColumn ? 1 : 0) + 1;
+        const totalColsCount = 4 + hodOrderedSubjectIds.length * 3 + 1;
 
         return (
           <div className="space-y-6">
@@ -2769,7 +2825,7 @@ export const DashboardHome = () => {
                     >
                       <option value="rollAsc">Register No (Asc)</option>
                       <option value="rollDesc">Register No (Desc)</option>
-                      <option value="nameAsc">Name (A-Z)</option>
+<option value="nameAsc">Name (A-Z)</option>
                       <option value="pctAsc">Overall Pct (Lowest)</option>
                       <option value="pctDesc">Overall Pct (Highest)</option>
                     </select>
@@ -2786,41 +2842,66 @@ export const DashboardHome = () => {
                         <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Student Name</th>
                         <th rowSpan={2} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850">Language Choice</th>
                         
-                        {selectedRegularSubjects.map(sub => (
-                              <th key={sub._id} colSpan={3} className="py-1 px-2 text-center font-mono border-b border-r border-zinc-200 dark:border-zinc-850">
-                                <div className="truncate max-w-[120px] mx-auto">{sub.subjectId}</div>
-                                <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans max-w-[120px] truncate mx-auto mt-0.5" title={sub.facultyName}>
-                                  {sub.facultyName}
-                                </div>
-                              </th>
-                            ))}
-                            
-                            {showLanguageColumn && (
-                              <th colSpan={3} className="py-1 px-2 text-center border-b border-r border-zinc-200 dark:border-zinc-850">
+                        {hodOrderedSubjectIds.map((subjectId, index) => {
+                          const isDragOver = dragOverSubjectIdx === index;
+                          const isDragging = draggedSubjectIdx === index;
+                          
+                          if (subjectId === 'language') {
+                            return (
+                              <th
+                                key="language"
+                                colSpan={3}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, index)}
+                                onDragOver={(e) => handleDragOver(e, index)}
+                                onDragEnd={handleDragEnd}
+                                onDrop={(e) => handleDrop(e, index)}
+                                className={`py-1 px-2 text-center border-b border-r border-zinc-200 dark:border-zinc-850 cursor-grab active:cursor-grabbing select-none transition-all duration-150 ${
+                                  isDragOver ? 'bg-zinc-100 dark:bg-zinc-800 border-l-2 border-l-primary' : ''
+                                } ${isDragging ? 'opacity-40 scale-95' : ''}`}
+                              >
                                 <div className="truncate max-w-[120px] mx-auto font-semibold">Language</div>
-                                <div className="text-[9px] text-zinc-550 dark:text-zinc-400 text-zinc-500 font-normal italic font-sans max-w-[120px] truncate mx-auto mt-0.5" title="Language Elective Faculty">
+                                <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans max-w-[120px] truncate mx-auto mt-0.5" title="Language Elective Faculty">
                                   Language Staff
                                 </div>
                               </th>
-                            )}
+                            );
+                          }
+
+                          const sub = hodConsolidatedData?.subjects?.find(s => s._id === subjectId);
+                          if (!sub) return null;
+
+                          return (
+                            <th
+                              key={sub._id}
+                              colSpan={3}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, index)}
+                              onDragOver={(e) => handleDragOver(e, index)}
+                              onDragEnd={handleDragEnd}
+                              onDrop={(e) => handleDrop(e, index)}
+                              className={`py-1 px-2 text-center font-mono border-b border-r border-zinc-200 dark:border-zinc-850 cursor-grab active:cursor-grabbing select-none transition-all duration-150 ${
+                                isDragOver ? 'bg-zinc-100 dark:bg-zinc-800 border-l-2 border-l-primary' : ''
+                              } ${isDragging ? 'opacity-40 scale-95' : ''}`}
+                            >
+                              <div className="truncate max-w-[120px] mx-auto">{sub.subjectId}</div>
+                              <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans max-w-[120px] truncate mx-auto mt-0.5" title={sub.facultyName}>
+                                {sub.facultyName}
+                              </div>
+                            </th>
+                          );
+                        })}
                         
                         <th rowSpan={2} className="py-2.5 px-3 text-right">Overall Attendance</th>
                       </tr>
                       <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/20 dark:bg-zinc-900/10 text-zinc-505 dark:text-zinc-400 font-semibold text-[10px]">
-                        {selectedRegularSubjects.map(sub => (
-                          <React.Fragment key={sub._id}>
+                        {hodOrderedSubjectIds.map((subjectId) => (
+                          <React.Fragment key={`${subjectId}-subheaders`}>
                             <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">CT</th>
                             <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">AT</th>
                             <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-12">%</th>
                           </React.Fragment>
                         ))}
-                        {showLanguageColumn && (
-                          <React.Fragment>
-                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">CT</th>
-                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">AT</th>
-                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-12">%</th>
-                          </React.Fragment>
-                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -2884,7 +2965,18 @@ export const DashboardHome = () => {
                               <td className="py-2.5 px-3 font-medium border-r border-zinc-100 dark:border-zinc-900">{row.fullName}</td>
                               <td className="py-2.5 px-3 text-center uppercase text-[10px] font-bold text-zinc-500 border-r border-zinc-100 dark:border-zinc-900">{row.language || 'N/A'}</td>
                               
-                              {selectedRegularSubjects.map(sub => {
+                              {hodOrderedSubjectIds.map(subjectId => {
+                                if (subjectId === 'language') {
+                                  return (
+                                    <React.Fragment key="language-cells">
+                                      {languageCell}
+                                    </React.Fragment>
+                                  );
+                                }
+
+                                const sub = hodConsolidatedData?.subjects?.find(s => s._id === subjectId);
+                                if (!sub) return null;
+
                                 const subAtt = row.attendance[sub._id];
                                 const facultyTooltip = `Faculty: ${sub.facultyName || 'Not Allocated'}`;
                                 if (!subAtt) {
@@ -2919,8 +3011,6 @@ export const DashboardHome = () => {
                                 );
                               })}
                               
-                              {showLanguageColumn && languageCell}
-
                               <td className="py-2.5 px-3 text-right">
                                 <span className={`px-2.5 py-0.5 rounded font-bold text-[11px] ${
                                   overallLow
