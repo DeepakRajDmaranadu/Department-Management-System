@@ -397,7 +397,7 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
             presentCount++;
           }
         });
-        const percentage = totalClasses > 0 ? parseFloat(((presentCount / totalClasses) * 100).toFixed(2)) : 100.0;
+        const percentage = totalClasses > 0 ? parseFloat(((presentCount / totalClasses) * 100).toFixed(2)) : 'N/A';
         return {
           _id: student._id,
           studentId: student.studentId,
@@ -473,7 +473,7 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
           }
         });
 
-        const percentage = totalClasses > 0 ? parseFloat(((presentCount / totalClasses) * 100).toFixed(2)) : 100.0;
+        const percentage = totalClasses > 0 ? parseFloat(((presentCount / totalClasses) * 100).toFixed(2)) : 'N/A';
 
         studentAttendance[sub._id] = {
           percentage,
@@ -482,13 +482,15 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
           isEnrolled: true
         };
 
-        totalEnrolledClasses += totalClasses;
-        totalEnrolledPresent += presentCount;
+        if (totalClasses > 0) {
+          totalEnrolledClasses += totalClasses;
+          totalEnrolledPresent += presentCount;
+        }
       });
 
       const overallPercentage = totalEnrolledClasses > 0
         ? parseFloat(((totalEnrolledPresent / totalEnrolledClasses) * 100).toFixed(2))
-        : 100.0;
+        : 'N/A';
 
       consolidatedData.push({
         _id: student._id,

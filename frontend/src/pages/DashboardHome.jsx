@@ -193,11 +193,10 @@ export const DashboardHome = () => {
   const [submissionFilterLanguage, setSubmissionFilterLanguage] = useState("all");
 
   // HOD Consolidated Attendance states
-  const [hodSelectedCourse, setHodSelectedCourse] = useState("");
   const [hodSelectedBatch, setHodSelectedBatch] = useState(null);
   const [hodSelectedSemester, setHodSelectedSemester] = useState(null);
   const [hodSelectedSection, setHodSelectedSection] = useState("");
-  const [hodSelectedSubject, setHodSelectedSubject] = useState("all");
+  const [hodSelectedSubjectIds, setHodSelectedSubjectIds] = useState([]);
   const [hodConsolidatedData, setHodConsolidatedData] = useState(null);
   const [hodConsolidatedLoading, setHodConsolidatedLoading] = useState(false);
   const [hodSearchQuery, setHodSearchQuery] = useState("");
@@ -205,6 +204,7 @@ export const DashboardHome = () => {
   const [hodSemesters, setHodSemesters] = useState([]);
   const [hodSections, setHodSections] = useState([]);
   const [hodSubjects, setHodSubjects] = useState([]);
+  const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false);
 
   // Forms
   const {
@@ -1394,19 +1394,24 @@ export const DashboardHome = () => {
     try {
       const response = await api.get(`/api/subjects/semesters/${semesterId}`);
       if (response.data.success) {
-        setHodSubjects(response.data.subjects);
+        const fetched = response.data.data || [];
+        setHodSubjects(fetched);
+        
+        // Default to checking all regular subjects + 'language' combined checkbox
+        const regularIds = fetched.filter(s => s.subjectType !== 'language').map(s => s._id);
+        setHodSelectedSubjectIds([...regularIds, "language"]);
       }
     } catch (err) {
       console.error("Failed to fetch HOD subjects", err);
     }
   };
 
-  const fetchHODConsolidatedAttendance = async (semId, secId, subId) => {
+  const fetchHODConsolidatedAttendance = async (semId, secId) => {
     if (!semId) return;
     setHodConsolidatedLoading(true);
     setHodConsolidatedData(null);
     try {
-      const response = await api.get(`/api/attendance/hod/consolidated?semesterId=${semId}&sectionId=${secId || 'all'}&subjectId=${subId || 'all'}`);
+      const response = await api.get(`/api/attendance/hod/consolidated?semesterId=${semId}&sectionId=${secId || 'all'}&subjectId=all`);
       if (response.data.success) {
         setHodConsolidatedData(response.data);
       }
@@ -1417,13 +1422,39 @@ export const DashboardHome = () => {
     }
   };
 
+  const getStudentOverallAttendance = (row) => {
+    let totalEnrolledClasses = 0;
+    let totalEnrolledPresent = 0;
+
+    const subjectsList = hodConsolidatedData?.subjects || [];
+    
+    subjectsList.forEach(sub => {
+      const isSelected = sub.subjectType === 'language' 
+        ? hodSelectedSubjectIds.includes("language")
+        : hodSelectedSubjectIds.includes(sub._id);
+
+      if (!isSelected) return;
+
+      const subAtt = row.attendance[sub._id];
+      if (subAtt && subAtt.isEnrolled && subAtt.totalClasses > 0) {
+        totalEnrolledClasses += subAtt.totalClasses;
+        totalEnrolledPresent += subAtt.presentCount;
+      }
+    });
+
+    if (totalEnrolledClasses === 0) return 'N/A';
+    return parseFloat(((totalEnrolledPresent / totalEnrolledClasses) * 100).toFixed(2));
+  };
+
   const downloadHODConsolidatedExcel = () => {
     if (!hodConsolidatedData || !hodConsolidatedData.data || hodConsolidatedData.data.length === 0) return;
 
-    const isSingle = hodConsolidatedData.mode === 'single';
     const subjectsList = hodConsolidatedData.subjects || [];
-    const subjectName = isSingle ? (hodConsolidatedData.subject?.name || "Subject") : "All Subjects";
-    const subjectCode = isSingle ? (hodConsolidatedData.subject?.subjectId || "Code") : "ALL";
+    const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+    const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+
+    const showLanguage = hodSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
+    const selectedRegularSubjects = regularSubjects.filter(s => hodSelectedSubjectIds.includes(s._id));
 
     let html = `<html xmlns:o="urn:schemas-microsoft-excel:office:office" xmlns:x="urn:schemas-microsoft-excel:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
@@ -1440,7 +1471,6 @@ export const DashboardHome = () => {
 </head>
 <body>
   <div class="title">CONSOLIDATED ATTENDANCE REPORT</div>
-  <div class="title" style="font-size: 14px; font-weight: normal; color: #555;">Scope: ${subjectCode} - ${subjectName}</div>
   <br/>
   <table>
     <thead>
@@ -1450,24 +1480,20 @@ export const DashboardHome = () => {
         <th>Student Name</th>
         <th class="center">Language Choice</th>`;
 
-    if (isSingle) {
-      html += `
-        <th class="center">Classes Attended</th>
-        <th class="center">Total Classes</th>
-        <th class="right">Attendance Percentage (%)</th>`;
-    } else {
-      subjectsList.forEach(sub => {
-        html += `<th class="center">${sub.subjectId}</th>`;
-      });
-      html += `<th class="right">Overall Attendance (%)</th>`;
+    selectedRegularSubjects.forEach(sub => {
+      html += `<th class="center">${sub.subjectId}</th>`;
+    });
+
+    if (showLanguage) {
+      html += `<th class="center">Language</th>`;
     }
 
-    html += `
+    html += `<th class="right">Overall Attendance (%)</th>
       </tr>
     </thead>
     <tbody>`;
 
-    hodConsolidatedData.data.forEach((row, idx) => {
+    getFilteredAndSortedHODData().forEach((row, idx) => {
       html += `
       <tr>
         <td class="center">${idx + 1}</td>
@@ -1475,21 +1501,30 @@ export const DashboardHome = () => {
         <td>${row.fullName}</td>
         <td class="center" style="text-transform: uppercase;">${row.language || 'N/A'}</td>`;
 
-      if (isSingle) {
-        html += `
-        <td class="center">${row.presentCount}</td>
-        <td class="center">${row.totalClasses}</td>
-        <td class="right">${row.percentage}%</td>`;
-      } else {
-        subjectsList.forEach(sub => {
+      selectedRegularSubjects.forEach(sub => {
+        const subAtt = row.attendance[sub._id];
+        const pct = subAtt ? (subAtt.totalClasses > 0 ? `${subAtt.percentage}%` : '-') : '-';
+        html += `<td class="center">${pct}</td>`;
+      });
+
+      if (showLanguage) {
+        const studentLangSub = languageSubjects.find(sub => {
           const subAtt = row.attendance[sub._id];
-          const pct = subAtt ? (subAtt.isEnrolled ? `${subAtt.percentage}%` : 'N/A') : '-';
-          html += `<td class="center">${pct}</td>`;
+          return subAtt && subAtt.isEnrolled;
         });
-        html += `<td class="right">${row.overallPercentage}%</td>`;
+
+        if (studentLangSub) {
+          const subAtt = row.attendance[studentLangSub._id];
+          const pct = subAtt ? (subAtt.totalClasses > 0 ? `${subAtt.percentage}%` : '-') : '-';
+          html += `<td class="center">${pct}</td>`;
+        } else {
+          html += `<td class="center">N/A</td>`;
+        }
       }
 
-      html += `
+      const overallPct = getStudentOverallAttendance(row);
+      const overallStr = overallPct === 'N/A' ? '-' : `${overallPct}%`;
+      html += `<td class="right">${overallStr}</td>
       </tr>`;
     });
 
@@ -1502,7 +1537,7 @@ export const DashboardHome = () => {
     const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `consolidated_attendance_${subjectCode}.xls`;
+    link.download = `consolidated_attendance_report.xls`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1528,13 +1563,17 @@ export const DashboardHome = () => {
       } else if (hodSortCriteria === "nameAsc") {
         return a.fullName.localeCompare(b.fullName);
       } else if (hodSortCriteria === "pctAsc") {
-        const valA = hodConsolidatedData.mode === 'single' ? a.percentage : a.overallPercentage;
-        const valB = hodConsolidatedData.mode === 'single' ? b.percentage : b.overallPercentage;
-        return valA - valB;
+        const valA = getStudentOverallAttendance(a);
+        const valB = getStudentOverallAttendance(b);
+        const numA = valA === 'N/A' ? -1 : valA;
+        const numB = valB === 'N/A' ? -1 : valB;
+        return numA - numB;
       } else if (hodSortCriteria === "pctDesc") {
-        const valA = hodConsolidatedData.mode === 'single' ? a.percentage : a.overallPercentage;
-        const valB = hodConsolidatedData.mode === 'single' ? b.percentage : b.overallPercentage;
-        return valB - valA;
+        const valA = getStudentOverallAttendance(a);
+        const valB = getStudentOverallAttendance(b);
+        const numA = valA === 'N/A' ? -1 : valA;
+        const numB = valB === 'N/A' ? -1 : valB;
+        return numB - numA;
       }
       return 0;
     });
@@ -1547,7 +1586,7 @@ export const DashboardHome = () => {
       fetchHODSemesters(hodSelectedBatch._id);
       setHodSelectedSemester(null);
       setHodSelectedSection("");
-      setHodSelectedSubject("all");
+      setHodSelectedSubjectIds([]);
       setHodConsolidatedData(null);
     }
   }, [hodSelectedBatch]);
@@ -1557,7 +1596,7 @@ export const DashboardHome = () => {
       fetchHODSections(hodSelectedSemester._id);
       fetchHODSubjects(hodSelectedSemester._id);
       setHodSelectedSection("");
-      setHodSelectedSubject("all");
+      setHodSelectedSubjectIds([]);
       setHodConsolidatedData(null);
     }
   }, [hodSelectedSemester]);
@@ -1566,11 +1605,10 @@ export const DashboardHome = () => {
     if (hodSelectedSemester) {
       fetchHODConsolidatedAttendance(
         hodSelectedSemester._id,
-        hodSelectedSection,
-        hodSelectedSubject
+        hodSelectedSection
       );
     }
-  }, [hodSelectedSemester, hodSelectedSection, hodSelectedSubject]);
+  }, [hodSelectedSemester, hodSelectedSection]);
 
   const getStats = () => {
     const activeUsersCount = users.length > 0 ? users.filter((u) => u.status === "active").length : 1;
@@ -2497,6 +2535,14 @@ export const DashboardHome = () => {
         const filteredHODData = getFilteredAndSortedHODData();
         const hasRecords = hodConsolidatedData && hodConsolidatedData.data && hodConsolidatedData.data.length > 0;
         
+        const subjectsList = hodConsolidatedData?.subjects || [];
+        const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+        const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+
+        const showLanguageColumn = hodSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
+        const selectedRegularSubjects = regularSubjects.filter(s => hodSelectedSubjectIds.includes(s._id));
+        const totalColsCount = 4 + selectedRegularSubjects.length + (showLanguageColumn ? 1 : 0) + 1;
+
         return (
           <div className="space-y-6">
             <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
@@ -2518,28 +2564,14 @@ export const DashboardHome = () => {
                     onClick={downloadHODConsolidatedExcel}
                     className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold"
                   >
-                    <FileSpreadsheet className="h-4 w-4" />
+                <FileSpreadsheet className="h-4 w-4" />
                     <span>Export Excel Report</span>
                   </Button>
                 )}
               </CardHeader>
               <CardContent className="pt-4">
                 {/* Selectors Grid */}
-                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-5 text-xs pb-2">
-                  <div className="space-y-1">
-                    <Label className="text-zinc-700 dark:text-zinc-300">Department / Course</Label>
-                    <select
-                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
-                      value={hodSelectedCourse}
-                      onChange={(e) => setHodSelectedCourse(e.target.value)}
-                    >
-                      <option value="">-- All Courses --</option>
-                      {courses.map(c => (
-                        <option key={c._id} value={c.name}>{c.name} ({c.courseId})</option>
-                      ))}
-                    </select>
-                  </div>
-
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4 text-xs pb-2">
                   <div className="space-y-1">
                     <Label className="text-zinc-700 dark:text-zinc-300">Choose Batch *</Label>
                     <select
@@ -2564,12 +2596,12 @@ export const DashboardHome = () => {
                       disabled={!hodSelectedBatch}
                       value={hodSelectedSemester?._id || ""}
                       onChange={(e) => {
-                        const s = hodSemesters.find(x => x._id === e.target.value);
+                        const s = (hodSemesters || []).find(x => x._id === e.target.value);
                         setHodSelectedSemester(s || null);
                       }}
                     >
                       <option value="">-- Select Semester --</option>
-                      {hodSemesters.map(s => (
+                      {(hodSemesters || []).map(s => (
                         <option key={s._id} value={s._id}>{s.name}</option>
                       ))}
                     </select>
@@ -2584,32 +2616,106 @@ export const DashboardHome = () => {
                       onChange={(e) => setHodSelectedSection(e.target.value)}
                     >
                       <option value="all">Semester-Wide (All Sections)</option>
-                      {hodSections.map(sec => (
+                      {(hodSections || []).map(sec => (
                         <option key={sec._id} value={sec._id}>{sec.name}</option>
                       ))}
                     </select>
                   </div>
+                  <div className="space-y-1 relative">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Course Subjects</Label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        disabled={!hodSelectedSemester}
+                        onClick={() => setIsSubjectDropdownOpen(!isSubjectDropdownOpen)}
+                        className="flex h-8 w-full items-center justify-between rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-50 text-left"
+                      >
+                        <span className="truncate">
+                          {hodSelectedSubjectIds.length === 0
+                            ? "No subjects selected"
+                            : hodSelectedSubjectIds.length === (hodSubjects.filter(s => s.subjectType !== 'language').length + (hodSubjects.some(s => s.subjectType === 'language') ? 1 : 0))
+                            ? "All Subjects Selected"
+                            : `${hodSelectedSubjectIds.length} Subjects Selected`}
+                        </span>
+                        <ChevronDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
+                      </button>
 
-                  <div className="space-y-1">
-                    <Label className="text-zinc-700 dark:text-zinc-300">Course Subject</Label>
-                    <select
-                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
-                      disabled={!hodSelectedSemester}
-                      value={hodSelectedSubject}
-                      onChange={(e) => setHodSelectedSubject(e.target.value)}
-                    >
-                      <option value="all">All Subjects (Consolidated)</option>
-                      {hodSubjects.map(sub => (
-                        <option key={sub._id} value={sub._id}>{sub.subjectId} - {sub.name}</option>
-                      ))}
-                    </select>
+                      {isSubjectDropdownOpen && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setIsSubjectDropdownOpen(false)}
+                          />
+                          <div className="absolute right-0 left-0 mt-1 z-50 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 p-2 shadow-md max-h-60 overflow-y-auto space-y-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                            <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 dark:border-zinc-900 text-[10px] text-zinc-500">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const regularIds = hodSubjects.filter(s => s.subjectType !== 'language').map(s => s._id);
+                                  const hasLang = hodSubjects.some(s => s.subjectType === 'language');
+                                  setHodSelectedSubjectIds(hasLang ? [...regularIds, "language"] : regularIds);
+                                }}
+                                className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
+                              >
+                                Select All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setHodSelectedSubjectIds([])}
+                                className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
+                              >
+                                Deselect All
+                              </button>
+                            </div>
+                            
+                            {/* Combined Language Option */}
+                            {hodSubjects.some(s => s.subjectType === 'language') && (
+                              <label className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300 font-semibold">
+                                <input
+                                  type="checkbox"
+                                  checked={hodSelectedSubjectIds.includes("language")}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setHodSelectedSubjectIds(prev => [...prev, "language"]);
+                                    } else {
+                                      setHodSelectedSubjectIds(prev => prev.filter(x => x !== "language"));
+                                    }
+                                  }}
+                                  className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                                />
+                                <span>Language</span>
+                              </label>
+                            )}
+
+                            {/* Regular Subjects */}
+                            {hodSubjects.filter(s => s.subjectType !== 'language').map(sub => (
+                              <label key={sub._id} className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300">
+                                <input
+                                  type="checkbox"
+                                  checked={hodSelectedSubjectIds.includes(sub._id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setHodSelectedSubjectIds(prev => [...prev, sub._id]);
+                                    } else {
+                                      setHodSelectedSubjectIds(prev => prev.filter(x => x !== sub._id));
+                                    }
+                                  }}
+                                  className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                                />
+                                <span>{sub.subjectId} - {sub.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             {!hodSelectedSemester ? (
-              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 text-zinc-505 italic text-xs">
                 Please select Batch and Semester from dropdowns to display consolidated records.
               </div>
             ) : hodConsolidatedLoading ? (
@@ -2658,20 +2764,16 @@ export const DashboardHome = () => {
                         <th className="py-2.5 px-3 text-center w-12">Sl. No.</th>
                         <th className="py-2.5 px-3">Register Number</th>
                         <th className="py-2.5 px-3">Student Name</th>
-                        <th className="py-2.5 px-3 text-center">Language</th>
+                        <th className="py-2.5 px-3 text-center">Language Choice</th>
                         
-                        {hodConsolidatedData.mode === 'single' ? (
-                          <>
-                            <th className="py-2.5 px-3 text-center">Classes Attended</th>
-                            <th className="py-2.5 px-3 text-center">Total Classes</th>
-                            <th className="py-2.5 px-3 text-right">Attendance Percentage</th>
-                          </>
-                        ) : (
-                          hodConsolidatedData.subjects.map(sub => (
-                            <th key={sub._id} className="py-2.5 px-3 text-center font-mono">
-                              {sub.subjectId}
-                            </th>
-                          ))
+                        {selectedRegularSubjects.map(sub => (
+                          <th key={sub._id} className="py-2.5 px-3 text-center font-mono">
+                            {sub.subjectId}
+                          </th>
+                        ))}
+                        
+                        {showLanguageColumn && (
+                          <th className="py-2.5 px-3 text-center">Language</th>
                         )}
                         
                         <th className="py-2.5 px-3 text-right">Overall Attendance</th>
@@ -2680,13 +2782,40 @@ export const DashboardHome = () => {
                     <tbody>
                       {filteredHODData.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="py-8 text-center text-zinc-500 italic">
+                          <td colSpan={totalColsCount} className="py-8 text-center text-zinc-500 italic">
                             No students match your search query.
                           </td>
                         </tr>
                       ) : (
                         filteredHODData.map((row, idx) => {
-                          const overallLow = row.overallPercentage < 75;
+                          const overallPct = getStudentOverallAttendance(row);
+                          const overallLow = overallPct !== 'N/A' && overallPct < 75;
+
+                          let languageCell = null;
+                          if (showLanguageColumn) {
+                            const studentLangSub = languageSubjects.find(sub => {
+                              const subAtt = row.attendance[sub._id];
+                              return subAtt && subAtt.isEnrolled;
+                            });
+
+                            if (!studentLangSub) {
+                              languageCell = <td className="py-2.5 px-3 text-center text-zinc-400 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>;
+                            } else {
+                              const subAtt = row.attendance[studentLangSub._id];
+                              if (!subAtt || subAtt.totalClasses === 0) {
+                                languageCell = <td className="py-2.5 px-3 text-center text-zinc-400 font-semibold">-</td>;
+                              } else {
+                                languageCell = (
+                                  <td className="py-2.5 px-3 text-center font-mono font-semibold">
+                                    <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
+                                      {subAtt.percentage}%
+                                    </span>
+                                  </td>
+                                );
+                              }
+                            }
+                          }
+                          
                           return (
                             <tr key={row._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
                               <td className="py-2.5 px-3 text-center font-semibold text-zinc-400">{idx + 1}</td>
@@ -2694,43 +2823,31 @@ export const DashboardHome = () => {
                               <td className="py-2.5 px-3 font-medium">{row.fullName}</td>
                               <td className="py-2.5 px-3 text-center uppercase text-[10px] font-bold text-zinc-500">{row.language || 'N/A'}</td>
                               
-                              {hodConsolidatedData.mode === 'single' ? (
-                                <>
-                                  <td className="py-2.5 px-3 text-center font-bold text-zinc-650">{row.presentCount}</td>
-                                  <td className="py-2.5 px-3 text-center text-zinc-500">{row.totalClasses}</td>
-                                  <td className="py-2.5 px-3 text-right">
-                                    <span className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
-                                      row.percentage < 75
-                                        ? 'bg-red-500/10 border border-red-500/20 text-red-650 dark:text-red-400'
-                                        : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-650 dark:text-emerald-400'
-                                    }`}>
-                                      {row.percentage}%
+                              {selectedRegularSubjects.map(sub => {
+                                const subAtt = row.attendance[sub._id];
+                                if (!subAtt) return <td key={sub._id} className="py-2.5 px-3 text-center text-zinc-400">-</td>;
+                                if (subAtt.totalClasses === 0) return <td key={sub._id} className="py-2.5 px-3 text-center text-zinc-400 font-semibold">-</td>;
+                                
+                                return (
+                                  <td key={sub._id} className="py-2.5 px-3 text-center font-mono font-semibold">
+                                    <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
+                                      {subAtt.percentage}%
                                     </span>
                                   </td>
-                                </>
-                              ) : (
-                                hodConsolidatedData.subjects.map(sub => {
-                                  const subAtt = row.attendance[sub._id];
-                                  if (!subAtt) return <td key={sub._id} className="py-2.5 px-3 text-center text-zinc-400">-</td>;
-                                  if (!subAtt.isEnrolled) return <td key={sub._id} className="py-2.5 px-3 text-center text-zinc-400 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>;
-                                  
-                                  return (
-                                    <td key={sub._id} className="py-2.5 px-3 text-center font-mono font-semibold">
-                                      <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
-                                        {subAtt.percentage}%
-                                      </span>
-                                    </td>
-                                  );
-                                })
-                              )}
+                                );
+                              })}
                               
+                              {showLanguageColumn && languageCell}
+
                               <td className="py-2.5 px-3 text-right">
                                 <span className={`px-2.5 py-0.5 rounded font-bold text-[11px] ${
                                   overallLow
                                     ? 'bg-red-500/20 border border-red-500/30 text-red-650 dark:text-red-400 animate-pulse-subtle'
+                                    : overallPct === 'N/A'
+                                    ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-400'
                                     : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-650 dark:text-emerald-400'
                                 }`}>
-                                  {hodConsolidatedData.mode === 'single' ? row.percentage : row.overallPercentage}%
+                                  {overallPct === 'N/A' ? '-' : `${overallPct}%`}
                                 </span>
                               </td>
                             </tr>
@@ -2834,7 +2951,12 @@ export const DashboardHome = () => {
                     <div className="space-y-6">
                       {/* Create Batch Form */}
                       <form onSubmit={onCreateBatch} className="border border-zinc-150 dark:border-zinc-850 p-4 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/10 space-y-3">
-                        <h4 className="font-semibold text-zinc-900 dark:text-white text-sm">Create New Student Batch</h4>
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold text-zinc-900 dark:text-white text-sm">Create New Student Batch</h4>
+                          <span className="text-[10px] bg-zinc-150 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-350 px-2 py-0.5 rounded font-medium">
+                            Dept: {user.department}
+                          </span>
+                        </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="space-y-1">
                             <Label htmlFor="batchId" className="text-zinc-700 dark:text-zinc-300">Batch ID</Label>                            <Input
