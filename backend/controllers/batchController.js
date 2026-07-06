@@ -3,6 +3,8 @@ const Student = require('../models/Student');
 const Semester = require('../models/Semester');
 const Section = require('../models/Section');
 const Allotment = require('../models/Allotment');
+const Attendance = require('../models/Attendance');
+const Assignment = require('../models/Assignment');
 
 // Create a new batch
 exports.createBatch = async (req, res) => {
@@ -62,12 +64,22 @@ exports.deleteBatch = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Batch not found' });
     }
 
-    // Delete all students in this batch
-    await Student.deleteMany({ batch: id });
-
-    // Find all semesters for this batch
+    const studentCount = await Student.countDocuments({ batch: id });
     const semesters = await Semester.find({ batch: id });
     const semesterIds = semesters.map(s => s._id);
+
+    const attendanceCount = await Attendance.countDocuments({ semester: { $in: semesterIds } });
+    const assignmentCount = await Assignment.countDocuments({ semester: { $in: semesterIds } });
+
+    if (studentCount > 0 || semesters.length > 0 || attendanceCount > 0 || assignmentCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete batch as it contains active students, semesters, attendance logs, or assignments.'
+      });
+    }
+
+    // Delete all students in this batch
+    await Student.deleteMany({ batch: id });
 
     // Delete allotments and sections under these semesters
     await Allotment.deleteMany({ semester: { $in: semesterIds } });

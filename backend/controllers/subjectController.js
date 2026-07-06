@@ -2,6 +2,8 @@ const Subject = require('../models/Subject');
 const SubjectAllocation = require('../models/SubjectAllocation');
 const User = require('../models/User');
 const Semester = require('../models/Semester');
+const Attendance = require('../models/Attendance');
+const Assignment = require('../models/Assignment');
 
 // Create a new subject under a semester
 exports.createSubject = async (req, res) => {
@@ -62,6 +64,16 @@ exports.deleteSubject = async (req, res) => {
     const subject = await Subject.findById(id);
     if (!subject) {
       return res.status(404).json({ success: false, message: 'Subject not found' });
+    }
+
+    const attendanceCount = await Attendance.countDocuments({ subject: id });
+    const assignmentCount = await Assignment.countDocuments({ subject: id });
+
+    if (attendanceCount > 0 || assignmentCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete subject as there are active attendance records or assignments registered for it.'
+      });
     }
 
     // Cascade delete allocations
@@ -140,6 +152,28 @@ exports.deleteAllocation = async (req, res) => {
     const allocation = await SubjectAllocation.findById(id);
     if (!allocation) {
       return res.status(404).json({ success: false, message: 'Allocation not found' });
+    }
+
+    // Check if faculty has taken attendance or assignments for this subject
+    const attendanceCount = await Attendance.countDocuments({
+      subject: allocation.subject,
+      semester: allocation.semester,
+      section: allocation.section || { $exists: false },
+      faculty: allocation.faculty
+    });
+
+    const assignmentCount = await Assignment.countDocuments({
+      subject: allocation.subject,
+      semester: allocation.semester,
+      section: allocation.section || { $exists: false },
+      faculty: allocation.faculty
+    });
+
+    if (attendanceCount > 0 || assignmentCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete allocation as this faculty has already registered attendance or assignments for this subject.'
+      });
     }
 
     await SubjectAllocation.findByIdAndDelete(id);
