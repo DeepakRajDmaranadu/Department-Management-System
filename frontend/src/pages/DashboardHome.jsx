@@ -2787,16 +2787,22 @@ export const DashboardHome = () => {
                         <th rowSpan={2} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850">Language Choice</th>
                         
                         {selectedRegularSubjects.map(sub => (
-                          <th key={sub._id} colSpan={3} className="py-1 px-3 text-center font-mono border-b border-r border-zinc-200 dark:border-zinc-850">
-                            {sub.subjectId}
-                          </th>
-                        ))}
-                        
-                        {showLanguageColumn && (
-                          <th colSpan={3} className="py-1 px-3 text-center border-b border-r border-zinc-200 dark:border-zinc-850">
-                            Language
-                          </th>
-                        )}
+                              <th key={sub._id} colSpan={3} className="py-1 px-2 text-center font-mono border-b border-r border-zinc-200 dark:border-zinc-850">
+                                <div className="truncate max-w-[120px] mx-auto">{sub.subjectId}</div>
+                                <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans max-w-[120px] truncate mx-auto mt-0.5" title={sub.facultyName}>
+                                  {sub.facultyName}
+                                </div>
+                              </th>
+                            ))}
+                            
+                            {showLanguageColumn && (
+                              <th colSpan={3} className="py-1 px-2 text-center border-b border-r border-zinc-200 dark:border-zinc-850">
+                                <div className="truncate max-w-[120px] mx-auto font-semibold">Language</div>
+                                <div className="text-[9px] text-zinc-550 dark:text-zinc-400 text-zinc-500 font-normal italic font-sans max-w-[120px] truncate mx-auto mt-0.5" title="Language Elective Faculty">
+                                  Language Staff
+                                </div>
+                              </th>
+                            )}
                         
                         <th rowSpan={2} className="py-2.5 px-3 text-right">Overall Attendance</th>
                       </tr>
@@ -2844,30 +2850,31 @@ export const DashboardHome = () => {
                                   <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>
                                 </React.Fragment>
                               );
-                            } else {
-                              const subAtt = row.attendance[studentLangSub._id];
-                              if (!subAtt || subAtt.totalClasses === 0) {
-                                languageCell = (
-                                  <React.Fragment>
-                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">0</td>
-                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">0</td>
-                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 font-semibold">-</td>
-                                  </React.Fragment>
-                                );
                               } else {
-                                languageCell = (
-                                  <React.Fragment>
-                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono text-zinc-500">{subAtt.totalClasses}</td>
-                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold text-zinc-650">{subAtt.presentCount}</td>
-                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold">
-                                      <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
-                                        {subAtt.percentage}%
-                                      </span>
-                                    </td>
-                                  </React.Fragment>
-                                );
+                                const subAtt = row.attendance[studentLangSub._id];
+                                const facultyTooltip = `Faculty: ${studentLangSub.facultyName || 'Not Allocated'}`;
+                                if (!subAtt || subAtt.totalClasses === 0) {
+                                  languageCell = (
+                                    <React.Fragment>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>0</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>0</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 font-semibold" title={facultyTooltip}>-</td>
+                                    </React.Fragment>
+                                  );
+                                } else {
+                                  languageCell = (
+                                    <React.Fragment>
+                                      <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono text-zinc-500" title={facultyTooltip}>{subAtt.totalClasses}</td>
+                                      <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold text-zinc-650" title={facultyTooltip}>{subAtt.presentCount}</td>
+                                      <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold" title={facultyTooltip}>
+                                        <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
+                                          {subAtt.percentage}%
+                                        </span>
+                                      </td>
+                                    </React.Fragment>
+                                  );
+                                }
                               }
-                            }
                           }
                           
                           return (
@@ -2879,30 +2886,31 @@ export const DashboardHome = () => {
                               
                               {selectedRegularSubjects.map(sub => {
                                 const subAtt = row.attendance[sub._id];
+                                const facultyTooltip = `Faculty: ${sub.facultyName || 'Not Allocated'}`;
                                 if (!subAtt) {
                                   return (
                                     <React.Fragment key={sub._id}>
-                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">-</td>
-                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">-</td>
-                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">-</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>-</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>-</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>-</td>
                                     </React.Fragment>
                                   );
                                 }
                                 if (subAtt.totalClasses === 0) {
                                   return (
                                     <React.Fragment key={sub._id}>
-                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">0</td>
-                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">0</td>
-                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 font-semibold">-</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>0</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>0</td>
+                                      <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 font-semibold" title={facultyTooltip}>-</td>
                                     </React.Fragment>
                                   );
                                 }
                                 
                                 return (
                                   <React.Fragment key={sub._id}>
-                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono text-zinc-500">{subAtt.totalClasses}</td>
-                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold text-zinc-650">{subAtt.presentCount}</td>
-                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold">
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono text-zinc-500" title={facultyTooltip}>{subAtt.totalClasses}</td>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold text-zinc-650" title={facultyTooltip}>{subAtt.presentCount}</td>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold" title={facultyTooltip}>
                                       <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
                                         {subAtt.percentage}%
                                       </span>

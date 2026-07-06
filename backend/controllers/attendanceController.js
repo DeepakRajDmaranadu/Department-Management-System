@@ -355,14 +355,40 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
     const students = await Student.find(studentQuery).sort({ studentId: 1 });
 
     // 2. Fetch all subjects for this semester
-    const subjects = await Subject.find({ semester: semesterId }).sort({ subjectId: 1 });
+    const subjectsRaw = await Subject.find({ semester: semesterId }).sort({ subjectId: 1 });
+
+    // Fetch allocations in this semester
+    const allocationsQuery = { semester: semesterId };
+    if (sectionId && sectionId !== 'all') {
+      allocationsQuery.section = sectionId;
+    }
+    const allocations = await SubjectAllocation.find(allocationsQuery).populate('faculty', 'fullName');
+
+    const subjects = subjectsRaw.map(sub => {
+      const subAllocs = allocations.filter(a => a.subject.toString() === sub._id.toString());
+      const facultyNames = Array.from(new Set(subAllocs.map(a => a.faculty?.fullName).filter(Boolean)));
+      const facultyName = facultyNames.length > 0 ? facultyNames.join(', ') : 'Not Allocated';
+
+      return {
+        ...sub.toObject(),
+        facultyName
+      };
+    });
 
     // Mode: Single Subject Consolidated Report
     if (subjectId && subjectId !== 'all') {
-      const subject = await Subject.findById(subjectId);
-      if (!subject) {
+      const subjectRaw = await Subject.findById(subjectId);
+      if (!subjectRaw) {
         return res.status(404).json({ success: false, message: 'Subject not found' });
       }
+
+      const subAllocs = allocations.filter(a => a.subject.toString() === subjectRaw._id.toString());
+      const facultyNames = Array.from(new Set(subAllocs.map(a => a.faculty?.fullName).filter(Boolean)));
+      const facultyName = facultyNames.length > 0 ? facultyNames.join(', ') : 'Not Allocated';
+      const subject = {
+        ...subjectRaw.toObject(),
+        facultyName
+      };
 
       // Filter students if this is a language subject
       let filteredStudents = [...students];
