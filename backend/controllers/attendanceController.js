@@ -428,8 +428,8 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
 
     students.forEach(student => {
       const studentAttendance = {};
-      let totalEnrolledClasses = 0;
-      let totalEnrolledPresent = 0;
+      let sumPercentages = 0;
+      let count = 0;
 
       subjects.forEach(sub => {
         // Check if student is enrolled in subject
@@ -483,13 +483,13 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
         };
 
         if (totalClasses > 0) {
-          totalEnrolledClasses += totalClasses;
-          totalEnrolledPresent += presentCount;
+          sumPercentages += percentage;
+          count++;
         }
       });
 
-      const overallPercentage = totalEnrolledClasses > 0
-        ? parseFloat(((totalEnrolledPresent / totalEnrolledClasses) * 100).toFixed(2))
+      const overallPercentage = count > 0
+        ? parseFloat((sumPercentages / count).toFixed(2))
         : 'N/A';
 
       consolidatedData.push({

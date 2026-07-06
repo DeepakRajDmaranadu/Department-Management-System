@@ -1423,8 +1423,8 @@ export const DashboardHome = () => {
   };
 
   const getStudentOverallAttendance = (row) => {
-    let totalEnrolledClasses = 0;
-    let totalEnrolledPresent = 0;
+    let sumPercentages = 0;
+    let count = 0;
 
     const subjectsList = hodConsolidatedData?.subjects || [];
     
@@ -1436,14 +1436,14 @@ export const DashboardHome = () => {
       if (!isSelected) return;
 
       const subAtt = row.attendance[sub._id];
-      if (subAtt && subAtt.isEnrolled && subAtt.totalClasses > 0) {
-        totalEnrolledClasses += subAtt.totalClasses;
-        totalEnrolledPresent += subAtt.presentCount;
+      if (subAtt && subAtt.isEnrolled && subAtt.totalClasses > 0 && typeof subAtt.percentage === 'number') {
+        sumPercentages += subAtt.percentage;
+        count++;
       }
     });
 
-    if (totalEnrolledClasses === 0) return 'N/A';
-    return parseFloat(((totalEnrolledPresent / totalEnrolledClasses) * 100).toFixed(2));
+    if (count === 0) return 'N/A';
+    return parseFloat((sumPercentages / count).toFixed(2));
   };
 
   const downloadHODConsolidatedExcel = () => {
