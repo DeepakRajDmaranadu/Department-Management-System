@@ -2,6 +2,8 @@ const SubjectAllocation = require('../models/SubjectAllocation');
 const Student = require('../models/Student');
 const Allotment = require('../models/Allotment');
 const Attendance = require('../models/Attendance');
+const Subject = require('../models/Subject');
+const Semester = require('../models/Semester');
 
 // Get all allocations for the logged-in faculty member
 exports.getMyAllocations = async (req, res) => {
@@ -319,6 +321,193 @@ exports.getAttendanceHistory = async (req, res) => {
       success: true,
       data: history,
     });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Fetch consolidated attendance report for HOD
+exports.getConsolidatedAttendanceForHOD = async (req, res) => {
+  try {
+    const { semesterId, sectionId, subjectId } = req.query;
+
+    if (!semesterId) {
+      return res.status(400).json({ success: false, message: 'semesterId is required' });
+    }
+
+    const semester = await Semester.findById(semesterId);
+    if (!semester) {
+      return res.status(404).json({ success: false, message: 'Semester not found' });
+    }
+
+    const batchId = semester.batch;
+
+    // 1. Fetch students roster (filtered by section if sectionId is specific)
+    let studentQuery = { batch: batchId };
+    if (sectionId && sectionId !== 'all') {
+      const allotmentsCount = await Allotment.countDocuments({ semester: semesterId });
+      if (allotmentsCount > 0) {
+        const allotments = await Allotment.find({ semester: semesterId, section: sectionId });
+        const studentIds = allotments.map(a => a.student);
+        studentQuery._id = { $in: studentIds };
+      }
+    }
+    const students = await Student.find(studentQuery).sort({ studentId: 1 });
+
+    // 2. Fetch all subjects for this semester
+    const subjects = await Subject.find({ semester: semesterId }).sort({ subjectId: 1 });
+
+    // Mode: Single Subject Consolidated Report
+    if (subjectId && subjectId !== 'all') {
+      const subject = await Subject.findById(subjectId);
+      if (!subject) {
+        return res.status(404).json({ success: false, message: 'Subject not found' });
+      }
+
+      // Filter students if this is a language subject
+      let filteredStudents = [...students];
+      if (subject.subjectType === 'language') {
+        const langCode = subject.subjectId.toUpperCase().trim();
+        filteredStudents = filteredStudents.filter(student => {
+          if (!student.language) return false;
+          const studentLang = student.language.toUpperCase().trim();
+          return (
+            studentLang === langCode ||
+            langCode.startsWith(studentLang) ||
+            studentLang.startsWith(langCode) ||
+            (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
+          );
+        });
+      }
+
+      // Fetch attendance records for this subject
+      const attRecordsQuery = { subject: subjectId, semester: semesterId };
+      if (sectionId && sectionId !== 'all') {
+        attRecordsQuery.section = sectionId;
+      }
+      
+      const attendanceRecords = await Attendance.find(attRecordsQuery);
+      const totalClasses = attendanceRecords.length;
+
+      const data = filteredStudents.map(student => {
+        let presentCount = 0;
+        attendanceRecords.forEach(att => {
+          const record = att.records.find(r => r.student.toString() === student._id.toString());
+          if (record && record.status === 'present') {
+            presentCount++;
+          }
+        });
+        const percentage = totalClasses > 0 ? parseFloat(((presentCount / totalClasses) * 100).toFixed(2)) : 100.0;
+        return {
+          _id: student._id,
+          studentId: student.studentId,
+          fullName: student.fullName,
+          email: student.email,
+          language: student.language,
+          totalClasses,
+          presentCount,
+          absentCount: totalClasses - presentCount,
+          percentage,
+        };
+      });
+
+      return res.status(200).json({
+        success: true,
+        mode: 'single',
+        subject,
+        totalClasses,
+        data,
+      });
+    }
+
+    // Mode: All Subjects Consolidated Report
+    const consolidatedData = [];
+
+    // Pre-fetch attendance records for all subjects to optimize querying database
+    const allAttendanceRecords = await Attendance.find({ semester: semesterId });
+
+    students.forEach(student => {
+      const studentAttendance = {};
+      let totalEnrolledClasses = 0;
+      let totalEnrolledPresent = 0;
+
+      subjects.forEach(sub => {
+        // Check if student is enrolled in subject
+        let isEnrolled = true;
+        if (sub.subjectType === 'language') {
+          const langCode = sub.subjectId.toUpperCase().trim();
+          const studentLang = (student.language || "").toUpperCase().trim();
+          isEnrolled = (
+            studentLang === langCode ||
+            langCode.startsWith(studentLang) ||
+            studentLang.startsWith(langCode) ||
+            (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
+          );
+        }
+
+        if (!isEnrolled) {
+          studentAttendance[sub._id] = {
+            percentage: 'N/A',
+            presentCount: 0,
+            totalClasses: 0,
+            isEnrolled: false
+          };
+          return;
+        }
+
+        const subRecords = allAttendanceRecords.filter(att => {
+          const isSameSub = att.subject.toString() === sub._id.toString();
+          if (!isSameSub) return false;
+          if (sectionId && sectionId !== 'all') {
+            return att.section?.toString() === sectionId.toString();
+          }
+          return true;
+        });
+
+        const totalClasses = subRecords.length;
+        let presentCount = 0;
+        subRecords.forEach(att => {
+          const record = att.records.find(r => r.student.toString() === student._id.toString());
+          if (record && record.status === 'present') {
+            presentCount++;
+          }
+        });
+
+        const percentage = totalClasses > 0 ? parseFloat(((presentCount / totalClasses) * 100).toFixed(2)) : 100.0;
+
+        studentAttendance[sub._id] = {
+          percentage,
+          presentCount,
+          totalClasses,
+          isEnrolled: true
+        };
+
+        totalEnrolledClasses += totalClasses;
+        totalEnrolledPresent += presentCount;
+      });
+
+      const overallPercentage = totalEnrolledClasses > 0
+        ? parseFloat(((totalEnrolledPresent / totalEnrolledClasses) * 100).toFixed(2))
+        : 100.0;
+
+      consolidatedData.push({
+        _id: student._id,
+        studentId: student.studentId,
+        fullName: student.fullName,
+        email: student.email,
+        language: student.language,
+        attendance: studentAttendance,
+        overallPercentage
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      mode: 'all',
+      subjects,
+      data: consolidatedData
+    });
+
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

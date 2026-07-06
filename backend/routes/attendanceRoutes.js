@@ -6,17 +6,23 @@ const {
   submitAttendance,
   getConsolidatedAttendance,
   getAttendanceHistory,
+  getConsolidatedAttendanceForHOD,
 } = require('../controllers/attendanceController');
 const { authenticateUser, authorizeRoles } = require('../middleware/authMiddleware');
 
-// Protect all routes - Faculty only
+// Protect all routes
 router.use(authenticateUser);
-router.use(authorizeRoles('Faculty'));
 
-router.get('/my-allocations', getMyAllocations);
-router.get('/students', getStudentsForAttendance);
-router.get('/consolidated', getConsolidatedAttendance);
-router.get('/history', getAttendanceHistory);
-router.post('/', submitAttendance);
+// HOD Consolidated Report Route
+router.get('/hod/consolidated', authorizeRoles('HOD'), getConsolidatedAttendanceForHOD);
+
+// Faculty & HOD general routes
+router.get('/consolidated', authorizeRoles('Faculty', 'HOD'), getConsolidatedAttendance);
+router.get('/history', authorizeRoles('Faculty', 'HOD'), getAttendanceHistory);
+
+// Faculty exclusive routes
+router.get('/my-allocations', authorizeRoles('Faculty'), getMyAllocations);
+router.get('/students', authorizeRoles('Faculty'), getStudentsForAttendance);
+router.post('/', authorizeRoles('Faculty'), submitAttendance);
 
 module.exports = router;

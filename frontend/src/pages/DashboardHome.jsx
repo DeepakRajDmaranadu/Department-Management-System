@@ -191,6 +191,20 @@ export const DashboardHome = () => {
   const [submissionFilterStatus, setSubmissionFilterStatus] = useState("all");
   const [submissionFilterLanguage, setSubmissionFilterLanguage] = useState("all");
 
+  // HOD Consolidated Attendance states
+  const [hodSelectedCourse, setHodSelectedCourse] = useState("");
+  const [hodSelectedBatch, setHodSelectedBatch] = useState(null);
+  const [hodSelectedSemester, setHodSelectedSemester] = useState(null);
+  const [hodSelectedSection, setHodSelectedSection] = useState("");
+  const [hodSelectedSubject, setHodSelectedSubject] = useState("all");
+  const [hodConsolidatedData, setHodConsolidatedData] = useState(null);
+  const [hodConsolidatedLoading, setHodConsolidatedLoading] = useState(false);
+  const [hodSearchQuery, setHodSearchQuery] = useState("");
+  const [hodSortCriteria, setHodSortCriteria] = useState("rollAsc");
+  const [hodSemesters, setHodSemesters] = useState([]);
+  const [hodSections, setHodSections] = useState([]);
+  const [hodSubjects, setHodSubjects] = useState([]);
+
   // Forms
   const {
     register: registerUser,
@@ -1353,6 +1367,210 @@ export const DashboardHome = () => {
     }
   }, [selectedFacultyAllocId, facultyTab, selectedFacultyDate, window.location.pathname]);
 
+  const fetchHODSemesters = async (batchId) => {
+    try {
+      const response = await api.get(`/api/batches/${batchId}/semesters`);
+      if (response.data.success) {
+        setHodSemesters(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch HOD semesters", err);
+    }
+  };
+
+  const fetchHODSections = async (semesterId) => {
+    try {
+      const response = await api.get(`/api/batches/semesters/${semesterId}/sections`);
+      if (response.data.success) {
+        setHodSections(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch HOD sections", err);
+    }
+  };
+
+  const fetchHODSubjects = async (semesterId) => {
+    try {
+      const response = await api.get(`/api/subjects/semesters/${semesterId}`);
+      if (response.data.success) {
+        setHodSubjects(response.data.subjects);
+      }
+    } catch (err) {
+      console.error("Failed to fetch HOD subjects", err);
+    }
+  };
+
+  const fetchHODConsolidatedAttendance = async (semId, secId, subId) => {
+    if (!semId) return;
+    setHodConsolidatedLoading(true);
+    setHodConsolidatedData(null);
+    try {
+      const response = await api.get(`/api/attendance/hod/consolidated?semesterId=${semId}&sectionId=${secId || 'all'}&subjectId=${subId || 'all'}`);
+      if (response.data.success) {
+        setHodConsolidatedData(response.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch HOD consolidated attendance", err);
+    } finally {
+      setHodConsolidatedLoading(false);
+    }
+  };
+
+  const downloadHODConsolidatedExcel = () => {
+    if (!hodConsolidatedData || !hodConsolidatedData.data || hodConsolidatedData.data.length === 0) return;
+
+    const isSingle = hodConsolidatedData.mode === 'single';
+    const subjectsList = hodConsolidatedData.subjects || [];
+    const subjectName = isSingle ? (hodConsolidatedData.subject?.name || "Subject") : "All Subjects";
+    const subjectCode = isSingle ? (hodConsolidatedData.subject?.subjectId || "Code") : "ALL";
+
+    let html = `<html xmlns:o="urn:schemas-microsoft-excel:office:office" xmlns:x="urn:schemas-microsoft-excel:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; }
+  table { border-collapse: collapse; width: 100%; font-family: 'Segoe UI', Arial, sans-serif; }
+  th, td { border: 1px solid #000000; padding: 10px 14px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; text-align: left; }
+  th { background-color: #f3f4f6; font-weight: bold; }
+  .title { font-size: 18px; font-weight: bold; margin-bottom: 10px; font-family: 'Segoe UI', Arial, sans-serif; }
+  .center { text-align: center; }
+  .right { text-align: right; }
+</style>
+</head>
+<body>
+  <div class="title">CONSOLIDATED ATTENDANCE REPORT</div>
+  <div class="title" style="font-size: 14px; font-weight: normal; color: #555;">Scope: ${subjectCode} - ${subjectName}</div>
+  <br/>
+  <table>
+    <thead>
+      <tr>
+        <th class="center">Sl. No.</th>
+        <th>Register Number</th>
+        <th>Student Name</th>
+        <th class="center">Language Choice</th>`;
+
+    if (isSingle) {
+      html += `
+        <th class="center">Classes Attended</th>
+        <th class="center">Total Classes</th>
+        <th class="right">Attendance Percentage (%)</th>`;
+    } else {
+      subjectsList.forEach(sub => {
+        html += `<th class="center">${sub.subjectId}</th>`;
+      });
+      html += `<th class="right">Overall Attendance (%)</th>`;
+    }
+
+    html += `
+      </tr>
+    </thead>
+    <tbody>`;
+
+    hodConsolidatedData.data.forEach((row, idx) => {
+      html += `
+      <tr>
+        <td class="center">${idx + 1}</td>
+        <td>${row.studentId}</td>
+        <td>${row.fullName}</td>
+        <td class="center" style="text-transform: uppercase;">${row.language || 'N/A'}</td>`;
+
+      if (isSingle) {
+        html += `
+        <td class="center">${row.presentCount}</td>
+        <td class="center">${row.totalClasses}</td>
+        <td class="right">${row.percentage}%</td>`;
+      } else {
+        subjectsList.forEach(sub => {
+          const subAtt = row.attendance[sub._id];
+          const pct = subAtt ? (subAtt.isEnrolled ? `${subAtt.percentage}%` : 'N/A') : '-';
+          html += `<td class="center">${pct}</td>`;
+        });
+        html += `<td class="right">${row.overallPercentage}%</td>`;
+      }
+
+      html += `
+      </tr>`;
+    });
+
+    html += `
+    </tbody>
+  </table>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `consolidated_attendance_${subjectCode}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFilteredAndSortedHODData = () => {
+    if (!hodConsolidatedData || !hodConsolidatedData.data) return [];
+    let list = [...hodConsolidatedData.data];
+
+    if (hodSearchQuery.trim()) {
+      const q = hodSearchQuery.toLowerCase();
+      list = list.filter(item => 
+        item.fullName.toLowerCase().includes(q) || 
+        item.studentId.toLowerCase().includes(q)
+      );
+    }
+
+    list.sort((a, b) => {
+      if (hodSortCriteria === "rollAsc") {
+        return a.studentId.localeCompare(b.studentId);
+      } else if (hodSortCriteria === "rollDesc") {
+        return b.studentId.localeCompare(a.studentId);
+      } else if (hodSortCriteria === "nameAsc") {
+        return a.fullName.localeCompare(b.fullName);
+      } else if (hodSortCriteria === "pctAsc") {
+        const valA = hodConsolidatedData.mode === 'single' ? a.percentage : a.overallPercentage;
+        const valB = hodConsolidatedData.mode === 'single' ? b.percentage : b.overallPercentage;
+        return valA - valB;
+      } else if (hodSortCriteria === "pctDesc") {
+        const valA = hodConsolidatedData.mode === 'single' ? a.percentage : a.overallPercentage;
+        const valB = hodConsolidatedData.mode === 'single' ? b.percentage : b.overallPercentage;
+        return valB - valA;
+      }
+      return 0;
+    });
+
+    return list;
+  };
+
+  useEffect(() => {
+    if (hodSelectedBatch) {
+      fetchHODSemesters(hodSelectedBatch._id);
+      setHodSelectedSemester(null);
+      setHodSelectedSection("");
+      setHodSelectedSubject("all");
+      setHodConsolidatedData(null);
+    }
+  }, [hodSelectedBatch]);
+
+  useEffect(() => {
+    if (hodSelectedSemester) {
+      fetchHODSections(hodSelectedSemester._id);
+      fetchHODSubjects(hodSelectedSemester._id);
+      setHodSelectedSection("");
+      setHodSelectedSubject("all");
+      setHodConsolidatedData(null);
+    }
+  }, [hodSelectedSemester]);
+
+  useEffect(() => {
+    if (hodSelectedSemester) {
+      fetchHODConsolidatedAttendance(
+        hodSelectedSemester._id,
+        hodSelectedSection,
+        hodSelectedSubject
+      );
+    }
+  }, [hodSelectedSemester, hodSelectedSection, hodSelectedSubject]);
+
   const getStats = () => {
     const activeUsersCount = users.length > 0 ? users.filter((u) => u.status === "active").length : 1;
     const usersCreatedTodayCount = users.filter((u) => {
@@ -2273,6 +2491,257 @@ export const DashboardHome = () => {
                   </div>
                 )}
               </div>
+        );
+      } else if (window.location.pathname.endsWith("/attendance")) {
+        const filteredHODData = getFilteredAndSortedHODData();
+        const hasRecords = hodConsolidatedData && hodConsolidatedData.data && hodConsolidatedData.data.length > 0;
+        
+        return (
+          <div className="space-y-6">
+            <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 pb-4 border-b border-zinc-100 dark:border-zinc-900">
+                <div>
+                  <CardTitle className="text-zinc-900 dark:text-white text-base flex items-center space-x-2">
+                    <CalendarCheck className="h-5 w-5 text-zinc-400" />
+                    <span>Consolidated Attendance Ledger</span>
+                  </CardTitle>
+                  <CardDescription className="text-zinc-500 text-xs mt-1">
+                    Select a class, section, and subjects to inspect attendance statistics.
+                  </CardDescription>
+                </div>
+                {hasRecords && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadHODConsolidatedExcel}
+                    className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    <span>Export Excel Report</span>
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="pt-4">
+                {/* Selectors Grid */}
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-5 text-xs pb-2">
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Department / Course</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      value={hodSelectedCourse}
+                      onChange={(e) => setHodSelectedCourse(e.target.value)}
+                    >
+                      <option value="">-- All Courses --</option>
+                      {courses.map(c => (
+                        <option key={c._id} value={c.name}>{c.name} ({c.courseId})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Choose Batch *</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      value={hodSelectedBatch?._id || ""}
+                      onChange={(e) => {
+                        const b = batches.find(x => x._id === e.target.value);
+                        setHodSelectedBatch(b || null);
+                      }}
+                    >
+                      <option value="">-- Select Batch --</option>
+                      {batches.map(b => (
+                        <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Choose Semester *</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      disabled={!hodSelectedBatch}
+                      value={hodSelectedSemester?._id || ""}
+                      onChange={(e) => {
+                        const s = hodSemesters.find(x => x._id === e.target.value);
+                        setHodSelectedSemester(s || null);
+                      }}
+                    >
+                      <option value="">-- Select Semester --</option>
+                      {hodSemesters.map(s => (
+                        <option key={s._id} value={s._id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Class / Section</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      disabled={!hodSelectedSemester}
+                      value={hodSelectedSection}
+                      onChange={(e) => setHodSelectedSection(e.target.value)}
+                    >
+                      <option value="all">Semester-Wide (All Sections)</option>
+                      {hodSections.map(sec => (
+                        <option key={sec._id} value={sec._id}>{sec.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Course Subject</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      disabled={!hodSelectedSemester}
+                      value={hodSelectedSubject}
+                      onChange={(e) => setHodSelectedSubject(e.target.value)}
+                    >
+                      <option value="all">All Subjects (Consolidated)</option>
+                      {hodSubjects.map(sub => (
+                        <option key={sub._id} value={sub._id}>{sub.subjectId} - {sub.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {!hodSelectedSemester ? (
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                Please select Batch and Semester from dropdowns to display consolidated records.
+              </div>
+            ) : hodConsolidatedLoading ? (
+              <div className="flex flex-col items-center justify-center p-24 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 space-y-4">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 dark:border-zinc-850 border-t-zinc-850 dark:border-t-zinc-200" />
+                <span className="text-zinc-500 text-xs font-semibold animate-pulse">Fetching consolidated records...</span>
+              </div>
+            ) : !hasRecords ? (
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-550 italic text-xs">
+                No attendance logs or student rosters found matching these criteria.
+              </div>
+            ) : (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                {/* Search and Sort controls */}
+                <div className="flex flex-col sm:flex-row gap-2 bg-zinc-50/50 dark:bg-zinc-900/10 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                    <Input
+                      type="text"
+                      placeholder="Search student name or register number..."
+                      value={hodSearchQuery}
+                      onChange={(e) => setHodSearchQuery(e.target.value)}
+                      className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      value={hodSortCriteria}
+                      onChange={(e) => setHodSortCriteria(e.target.value)}
+                    >
+                      <option value="rollAsc">Register No (Asc)</option>
+                      <option value="rollDesc">Register No (Desc)</option>
+                      <option value="nameAsc">Name (A-Z)</option>
+                      <option value="pctAsc">Overall Pct (Lowest)</option>
+                      <option value="pctDesc">Overall Pct (Highest)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Table View */}
+                <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
+                        <th className="py-2.5 px-3 text-center w-12">Sl. No.</th>
+                        <th className="py-2.5 px-3">Register Number</th>
+                        <th className="py-2.5 px-3">Student Name</th>
+                        <th className="py-2.5 px-3 text-center">Language</th>
+                        
+                        {hodConsolidatedData.mode === 'single' ? (
+                          <>
+                            <th className="py-2.5 px-3 text-center">Classes Attended</th>
+                            <th className="py-2.5 px-3 text-center">Total Classes</th>
+                            <th className="py-2.5 px-3 text-right">Attendance Percentage</th>
+                          </>
+                        ) : (
+                          hodConsolidatedData.subjects.map(sub => (
+                            <th key={sub._id} className="py-2.5 px-3 text-center font-mono">
+                              {sub.subjectId}
+                            </th>
+                          ))
+                        )}
+                        
+                        <th className="py-2.5 px-3 text-right">Overall Attendance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredHODData.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="py-8 text-center text-zinc-500 italic">
+                            No students match your search query.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredHODData.map((row, idx) => {
+                          const overallLow = row.overallPercentage < 75;
+                          return (
+                            <tr key={row._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
+                              <td className="py-2.5 px-3 text-center font-semibold text-zinc-400">{idx + 1}</td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-zinc-900 dark:text-white">{row.studentId}</td>
+                              <td className="py-2.5 px-3 font-medium">{row.fullName}</td>
+                              <td className="py-2.5 px-3 text-center uppercase text-[10px] font-bold text-zinc-500">{row.language || 'N/A'}</td>
+                              
+                              {hodConsolidatedData.mode === 'single' ? (
+                                <>
+                                  <td className="py-2.5 px-3 text-center font-bold text-zinc-650">{row.presentCount}</td>
+                                  <td className="py-2.5 px-3 text-center text-zinc-500">{row.totalClasses}</td>
+                                  <td className="py-2.5 px-3 text-right">
+                                    <span className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
+                                      row.percentage < 75
+                                        ? 'bg-red-500/10 border border-red-500/20 text-red-650 dark:text-red-400'
+                                        : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-650 dark:text-emerald-400'
+                                    }`}>
+                                      {row.percentage}%
+                                    </span>
+                                  </td>
+                                </>
+                              ) : (
+                                hodConsolidatedData.subjects.map(sub => {
+                                  const subAtt = row.attendance[sub._id];
+                                  if (!subAtt) return <td key={sub._id} className="py-2.5 px-3 text-center text-zinc-400">-</td>;
+                                  if (!subAtt.isEnrolled) return <td key={sub._id} className="py-2.5 px-3 text-center text-zinc-400 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>;
+                                  
+                                  return (
+                                    <td key={sub._id} className="py-2.5 px-3 text-center font-mono font-semibold">
+                                      <span className={subAtt.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
+                                        {subAtt.percentage}%
+                                      </span>
+                                    </td>
+                                  );
+                                })
+                              )}
+                              
+                              <td className="py-2.5 px-3 text-right">
+                                <span className={`px-2.5 py-0.5 rounded font-bold text-[11px] ${
+                                  overallLow
+                                    ? 'bg-red-500/20 border border-red-500/30 text-red-650 dark:text-red-400 animate-pulse-subtle'
+                                    : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-650 dark:text-emerald-400'
+                                }`}>
+                                  {hodConsolidatedData.mode === 'single' ? row.percentage : row.overallPercentage}%
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         );
       } else if (window.location.pathname.endsWith("/courses")) {
         return (

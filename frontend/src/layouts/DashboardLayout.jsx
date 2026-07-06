@@ -88,6 +88,7 @@ export const DashboardLayout = ({ children }) => {
       case "HOD":
         return [
           { title: "Department Hub", path: "/dashboard/hod", icon: <FolderTree className="h-4 w-4" /> },
+          { title: "Consolidated Attendance", path: "/dashboard/hod/attendance", icon: <CalendarCheck className="h-4 w-4" /> },
           { title: "Subject Allocation", path: "/dashboard/hod/subjects", icon: <FileSpreadsheet className="h-4 w-4" /> },
           { title: "Staff Allocations", path: "/dashboard/hod/faculty", icon: <Users className="h-4 w-4" /> },
           { title: "Course Registry", path: "/dashboard/hod/courses", icon: <BookOpen className="h-4 w-4" /> },
