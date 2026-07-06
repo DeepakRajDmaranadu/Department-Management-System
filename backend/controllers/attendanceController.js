@@ -406,33 +406,41 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
         });
       }
 
-      // Fetch attendance records for this subject
-      const attRecordsQuery = { subject: subjectId, semester: semesterId };
-      if (sectionId && sectionId !== 'all') {
-        attRecordsQuery.section = sectionId;
-      }
-      
-      const attendanceRecords = await Attendance.find(attRecordsQuery);
-      const totalClasses = attendanceRecords.length;
+      // Fetch attendance records for this subject (semester-wide)
+      const attendanceRecords = await Attendance.find({ subject: subjectId, semester: semesterId });
+      const allAllotments = await Allotment.find({ semester: semesterId });
 
       const data = filteredStudents.map(student => {
+        const studentAllotment = allAllotments.find(a => a.student.toString() === student._id.toString());
+        const studentSectionId = studentAllotment ? studentAllotment.section?.toString() : null;
+
+        // Filter attendance records to match student's specific section
+        const studentAttRecords = attendanceRecords.filter(att => {
+          const targetSectionId = (sectionId && sectionId !== 'all') ? sectionId : studentSectionId;
+          if (targetSectionId) {
+            return att.section?.toString() === targetSectionId;
+          }
+          return !att.section;
+        });
+
+        const studentTotalClasses = studentAttRecords.length;
         let presentCount = 0;
-        attendanceRecords.forEach(att => {
+        studentAttRecords.forEach(att => {
           const record = att.records.find(r => r.student.toString() === student._id.toString());
           if (record && record.status === 'present') {
             presentCount++;
           }
         });
-        const percentage = totalClasses > 0 ? parseFloat(((presentCount / totalClasses) * 100).toFixed(2)) : 'N/A';
+        const percentage = studentTotalClasses > 0 ? parseFloat(((presentCount / studentTotalClasses) * 100).toFixed(2)) : 'N/A';
         return {
           _id: student._id,
           studentId: student.studentId,
           fullName: student.fullName,
           email: student.email,
           language: student.language,
-          totalClasses,
+          totalClasses: studentTotalClasses,
           presentCount,
-          absentCount: totalClasses - presentCount,
+          absentCount: studentTotalClasses - presentCount,
           percentage,
         };
       });
@@ -441,7 +449,6 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
         success: true,
         mode: 'single',
         subject,
-        totalClasses,
         data,
       });
     }
@@ -451,8 +458,12 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
 
     // Pre-fetch attendance records for all subjects to optimize querying database
     const allAttendanceRecords = await Attendance.find({ semester: semesterId });
+    const allAllotments = await Allotment.find({ semester: semesterId });
 
     students.forEach(student => {
+      const studentAllotment = allAllotments.find(a => a.student.toString() === student._id.toString());
+      const studentSectionId = studentAllotment ? studentAllotment.section?.toString() : null;
+
       const studentAttendance = {};
       let sumPercentages = 0;
       let count = 0;
@@ -484,10 +495,12 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
         const subRecords = allAttendanceRecords.filter(att => {
           const isSameSub = att.subject.toString() === sub._id.toString();
           if (!isSameSub) return false;
-          if (sectionId && sectionId !== 'all') {
-            return att.section?.toString() === sectionId.toString();
+          
+          const targetSectionId = (sectionId && sectionId !== 'all') ? sectionId : studentSectionId;
+          if (targetSectionId) {
+            return att.section?.toString() === targetSectionId;
           }
-          return true;
+          return !att.section;
         });
 
         const totalClasses = subRecords.length;
