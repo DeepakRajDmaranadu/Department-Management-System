@@ -64,6 +64,7 @@ app.use('/api/batches', require('./routes/batchRoutes'));
 app.use('/api/subjects', require('./routes/subjectRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));
 app.use('/api/assignments', require('./routes/assignmentRoutes'));
+app.use('/api/internal-assessments', require('./routes/internalAssessmentRoutes'));
 
 // Root Status Check
 app.get('/health', (req, res) => {

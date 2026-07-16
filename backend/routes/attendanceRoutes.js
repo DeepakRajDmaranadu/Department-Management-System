@@ -7,6 +7,8 @@ const {
   getConsolidatedAttendance,
   getAttendanceHistory,
   getConsolidatedAttendanceForHOD,
+  getHODDailyAttendance,
+  submitHODDailyAttendance,
 } = require('../controllers/attendanceController');
 const { authenticateUser, authorizeRoles } = require('../middleware/authMiddleware');
 
@@ -15,6 +17,8 @@ router.use(authenticateUser);
 
 // HOD Consolidated Report Route
 router.get('/hod/consolidated', authorizeRoles('HOD'), getConsolidatedAttendanceForHOD);
+router.get('/hod/daily-attendance', authorizeRoles('HOD'), getHODDailyAttendance);
+router.post('/hod/daily-attendance', authorizeRoles('HOD'), submitHODDailyAttendance);
 
 // Faculty & HOD general routes
 router.get('/consolidated', authorizeRoles('Faculty', 'HOD'), getConsolidatedAttendance);

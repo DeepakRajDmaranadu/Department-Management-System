@@ -91,6 +91,7 @@ exports.getStudentsForAttendance = async (req, res) => {
       return {
         _id: student._id,
         studentId: student.studentId,
+        admissionNumber: student.admissionNumber || 'N/A',
         fullName: student.fullName,
         email: student.email,
         language: student.language,
@@ -306,6 +307,7 @@ exports.getAttendanceHistory = async (req, res) => {
         date: rec.date,
         createdAt: rec.createdAt,
         isEditable,
+        updatedByHOD: rec.updatedByHOD || false,
         total,
         present,
         absent,
@@ -313,6 +315,7 @@ exports.getAttendanceHistory = async (req, res) => {
           studentId: r.student?.studentId || 'N/A',
           fullName: r.student?.fullName || 'Unknown',
           status: r.status,
+          updatedByHOD: r.updatedByHOD || false,
         })),
       };
     });
@@ -329,7 +332,7 @@ exports.getAttendanceHistory = async (req, res) => {
 // Fetch consolidated attendance report for HOD
 exports.getConsolidatedAttendanceForHOD = async (req, res) => {
   try {
-    const { semesterId, sectionId, subjectId } = req.query;
+    const { semesterId, sectionId, subjectId, startDate, endDate } = req.query;
 
     if (!semesterId) {
       return res.status(400).json({ success: false, message: 'semesterId is required' });
@@ -406,8 +409,20 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
         });
       }
 
-      // Fetch attendance records for this subject (semester-wide)
-      const attendanceRecords = await Attendance.find({ subject: subjectId, semester: semesterId });
+      // Fetch attendance records for this subject (semester-wide, optionally date-filtered)
+      const attendanceQuery = { subject: subjectId, semester: semesterId };
+      if (startDate || endDate) {
+        attendanceQuery.date = {};
+        if (startDate) {
+          attendanceQuery.date.$gte = new Date(startDate);
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          attendanceQuery.date.$lte = end;
+        }
+      }
+      const attendanceRecords = await Attendance.find(attendanceQuery);
       const allAllotments = await Allotment.find({ semester: semesterId });
 
       const data = filteredStudents.map(student => {
@@ -435,6 +450,7 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
         return {
           _id: student._id,
           studentId: student.studentId,
+          admissionNumber: student.admissionNumber || 'N/A',
           fullName: student.fullName,
           email: student.email,
           language: student.language,
@@ -456,8 +472,20 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
     // Mode: All Subjects Consolidated Report
     const consolidatedData = [];
 
-    // Pre-fetch attendance records for all subjects to optimize querying database
-    const allAttendanceRecords = await Attendance.find({ semester: semesterId });
+    // Pre-fetch attendance records for all subjects to optimize querying database (optionally date-filtered)
+    const attendanceQuery = { semester: semesterId };
+    if (startDate || endDate) {
+      attendanceQuery.date = {};
+      if (startDate) {
+        attendanceQuery.date.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        attendanceQuery.date.$lte = end;
+      }
+    }
+    const allAttendanceRecords = await Attendance.find(attendanceQuery);
     const allAllotments = await Allotment.find({ semester: semesterId });
 
     students.forEach(student => {
@@ -534,6 +562,7 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
       consolidatedData.push({
         _id: student._id,
         studentId: student.studentId,
+        admissionNumber: student.admissionNumber || 'N/A',
         fullName: student.fullName,
         email: student.email,
         language: student.language,
@@ -549,6 +578,176 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
       data: consolidatedData
     });
 
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Fetch daily attendance roster and status for HOD
+exports.getHODDailyAttendance = async (req, res) => {
+  try {
+    const { subjectId, semesterId, sectionId, date } = req.query;
+
+    if (!subjectId || !semesterId || !date) {
+      return res.status(400).json({ success: false, message: 'subjectId, semesterId, and date are required' });
+    }
+
+    const Subject = require('../models/Subject');
+    const subject = await Subject.findById(subjectId);
+    if (!subject) {
+      return res.status(404).json({ success: false, message: 'Subject not found' });
+    }
+
+    const Semester = require('../models/Semester');
+    const semester = await Semester.findById(semesterId);
+    if (!semester) {
+      return res.status(404).json({ success: false, message: 'Semester not found' });
+    }
+
+    const batchId = semester.batch;
+
+    // Define student query base
+    let studentQuery = { batch: batchId };
+
+    // Apply section filter if section is specified
+    if (sectionId && sectionId !== 'all' && sectionId !== 'null' && sectionId !== '') {
+      const allotmentsCount = await Allotment.countDocuments({ semester: semesterId });
+      if (allotmentsCount > 0) {
+        const allotments = await Allotment.find({ semester: semesterId, section: sectionId });
+        const studentIds = allotments.map(a => a.student);
+        studentQuery._id = { $in: studentIds };
+      }
+    }
+
+    let students = await Student.find(studentQuery).sort({ studentId: 1 });
+
+    // Apply robust case-insensitive language filtering for language subjects
+    if (subject.subjectType === 'language') {
+      const langCode = subject.subjectId.toUpperCase().trim();
+      students = students.filter(student => {
+        if (!student.language) return false;
+        const studentLang = student.language.toUpperCase().trim();
+        return (
+          studentLang === langCode ||
+          langCode.startsWith(studentLang) ||
+          studentLang.startsWith(langCode) ||
+          (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
+        );
+      });
+    }
+
+    // Parse date normalized to UTC midnight
+    const attendanceDate = new Date(date);
+    attendanceDate.setUTCHours(0, 0, 0, 0);
+
+    // Look for existing attendance record
+    const targetSectionId = (sectionId && sectionId !== 'all' && sectionId !== 'null' && sectionId !== '') ? sectionId : null;
+    const attendance = await Attendance.findOne({
+      subject: subjectId,
+      date: attendanceDate,
+      section: targetSectionId,
+    }).populate('faculty', 'fullName');
+
+    // Map students with attendance status
+    const data = students.map(student => {
+      const record = attendance
+        ? attendance.records.find(r => r.student.toString() === student._id.toString())
+        : null;
+
+      return {
+        _id: student._id,
+        studentId: student.studentId,
+        admissionNumber: student.admissionNumber || 'N/A',
+        fullName: student.fullName,
+        email: student.email,
+        language: student.language,
+        status: record ? record.status : 'present', // default to present if unmarked
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data,
+      isMarked: !!attendance,
+      facultyName: attendance ? (attendance.faculty?.fullName || 'Unknown Faculty') : 'Not Marked Yet',
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Create or update daily attendance by HOD (bypassing 30-minute lock)
+exports.submitHODDailyAttendance = async (req, res) => {
+  try {
+    const { subjectId, semesterId, sectionId, date, records } = req.body;
+
+    if (!subjectId || !semesterId || !date || !records || !Array.isArray(records)) {
+      return res.status(400).json({ success: false, message: 'subjectId, semesterId, date, and records are required' });
+    }
+
+    // Normalize date to UTC midnight
+    const attendanceDate = new Date(date);
+    attendanceDate.setUTCHours(0, 0, 0, 0);
+
+    const targetSectionId = (sectionId && sectionId !== 'all' && sectionId !== 'null' && sectionId !== '') ? sectionId : null;
+
+    // Find if record already exists
+    const filter = {
+      subject: subjectId,
+      date: attendanceDate,
+      section: targetSectionId,
+    };
+
+    const existing = await Attendance.findOne(filter);
+
+    // Find allocated faculty members to set in the document (so it reflects back to them)
+    let facultyId = req.user._id;
+    if (existing) {
+      facultyId = existing.faculty;
+    } else {
+      const SubjectAllocation = require('../models/SubjectAllocation');
+      const allocation = await SubjectAllocation.findOne({
+        subject: subjectId,
+        semester: semesterId,
+        section: targetSectionId
+      });
+      if (allocation) {
+        facultyId = allocation.faculty;
+      }
+    }
+
+    const update = {
+      semester: semesterId,
+      faculty: facultyId,
+      records: records.map(r => {
+        let isRecordUpdatedByHOD = false;
+        if (existing) {
+          const orig = existing.records.find(ex => ex.student.toString() === r.studentId.toString());
+          if (orig) {
+            isRecordUpdatedByHOD = (orig.status !== r.status) || (orig.updatedByHOD === true);
+          } else {
+            isRecordUpdatedByHOD = true;
+          }
+        } else {
+          isRecordUpdatedByHOD = true;
+        }
+
+        return {
+          student: r.studentId,
+          status: r.status,
+          updatedByHOD: isRecordUpdatedByHOD,
+        };
+      }),
+      updatedByHOD: true,
+    };
+
+    const attendance = await Attendance.findOneAndUpdate(
+      filter,
+      { $set: update },
+      { new: true, upsert: true }
+    );
+
+    return res.status(200).json({ success: true, message: 'Attendance recorded successfully', data: attendance });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

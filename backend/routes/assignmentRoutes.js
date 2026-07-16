@@ -5,16 +5,20 @@ const {
   getAssignments,
   updateSubmissions,
   deleteAssignment,
+  getConsolidatedAssignmentsForHOD,
 } = require('../controllers/assignmentController');
 const { authenticateUser, authorizeRoles } = require('../middleware/authMiddleware');
 
-// Protect all routes - Faculty only
+// Protect all routes
 router.use(authenticateUser);
-router.use(authorizeRoles('Faculty'));
 
-router.post('/', createAssignment);
-router.get('/', getAssignments);
-router.put('/:id', updateSubmissions);
-router.delete('/:id', deleteAssignment);
+// HOD Consolidated Report Route
+router.get('/hod/consolidated', authorizeRoles('HOD'), getConsolidatedAssignmentsForHOD);
+
+// Faculty only routes
+router.post('/', authorizeRoles('Faculty'), createAssignment);
+router.get('/', authorizeRoles('Faculty'), getAssignments);
+router.put('/:id', authorizeRoles('Faculty'), updateSubmissions);
+router.delete('/:id', authorizeRoles('Faculty'), deleteAssignment);
 
 module.exports = router;

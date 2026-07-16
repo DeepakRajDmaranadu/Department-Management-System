@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import * as XLSX from "xlsx";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -28,6 +29,9 @@ import {
   Lock,
   Clock,
   CalendarCheck,
+  Copy,
+  Plus,
+  X,
 } from "lucide-react";
 
 const adminCreateUserSchema = z.object({
@@ -79,6 +83,224 @@ export const DashboardHome = () => {
   const setErrorMsg = (msg) => { if (msg) toast.error(msg); };
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    let startCell = null;
+    let isDraggingCells = false;
+    let activeTable = null;
+
+    const getCellCoords = (cell) => {
+      const tr = cell.parentElement;
+      if (!tr) return null;
+      return {
+        row: tr.rowIndex,
+        col: cell.cellIndex
+      };
+    };
+
+    const handleMouseDown = (e) => {
+      const cell = e.target.closest('.excel-table td');
+      if (!cell) return;
+
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') return;
+
+      activeTable = cell.closest('.excel-table');
+      if (!activeTable) return;
+
+      document.querySelectorAll('.excel-table .selected-cell').forEach(c => c.classList.remove('selected-cell'));
+
+      isDraggingCells = true;
+      startCell = cell;
+      cell.classList.add('selected-cell');
+      
+      e.preventDefault();
+    };
+
+    const handleMouseOver = (e) => {
+      if (!isDraggingCells || !startCell || !activeTable) return;
+      const cell = e.target.closest('.excel-table td');
+      if (!cell || cell.closest('.excel-table') !== activeTable) return;
+
+      const startCoords = getCellCoords(startCell);
+      const currentCoords = getCellCoords(cell);
+      if (!startCoords || !currentCoords) return;
+
+      const minRow = Math.min(startCoords.row, currentCoords.row);
+      const maxRow = Math.max(startCoords.row, currentCoords.row);
+      const minCol = Math.min(startCoords.col, currentCoords.col);
+      const maxCol = Math.max(startCoords.col, currentCoords.col);
+
+      const rows = activeTable.querySelectorAll('tr');
+      rows.forEach((tr, rIdx) => {
+        const cells = tr.querySelectorAll('th, td');
+        cells.forEach((c) => {
+          const cIdx = c.cellIndex;
+          if (rIdx >= minRow && rIdx <= maxRow && cIdx >= minCol && cIdx <= maxCol) {
+            c.classList.add('selected-cell');
+          } else {
+            c.classList.remove('selected-cell');
+          }
+        });
+      });
+    };
+
+    const handleMouseUp = () => {
+      isDraggingCells = false;
+    };
+
+    const handleHeaderClick = (e) => {
+      const th = e.target.closest('.excel-table th');
+      if (!th) return;
+
+      const table = th.closest('.excel-table');
+      if (!table) return;
+
+      const subjectId = th.getAttribute('data-subject-id');
+      const columnId = th.getAttribute('data-column-id');
+
+      if (subjectId || columnId) {
+        document.querySelectorAll('.excel-table .selected-cell').forEach(c => c.classList.remove('selected-cell'));
+
+        if (subjectId) {
+          table.querySelectorAll(`[data-subject-id="${subjectId}"]`).forEach(c => {
+            c.classList.add('selected-cell');
+          });
+        } else if (columnId) {
+          table.querySelectorAll(`[data-column-id="${columnId}"]`).forEach(c => {
+            c.classList.add('selected-cell');
+          });
+        }
+      }
+    };
+
+    const handleGlobalCopy = (e) => {
+      const activeTable = document.querySelector('.excel-table:hover') || document.querySelector('.excel-table');
+      if (!activeTable) return;
+
+      const selectedCells = activeTable.querySelectorAll('.selected-cell');
+      if (selectedCells.length > 0) {
+        const rows = Array.from(activeTable.querySelectorAll('tr'));
+        const tsvLines = [];
+        let htmlData = `<table>`;
+
+        rows.forEach(tr => {
+          const cells = Array.from(tr.querySelectorAll('th, td'));
+          const rowCells = [];
+          let rowHtml = `<tr>`;
+          let rowHasSelection = false;
+
+          cells.forEach(cell => {
+            if (cell.classList.contains('selected-cell')) {
+              rowHasSelection = true;
+              const text = cell.innerText.replace(/\s+/g, ' ').trim();
+              rowCells.push(text);
+
+              const cellTag = cell.tagName.toLowerCase();
+              rowHtml += `<${cellTag}>${text}</${cellTag}>`;
+            }
+          });
+
+          rowHtml += `</tr>`;
+          if (rowHasSelection && rowCells.length > 0) {
+            tsvLines.push(rowCells.join('\t'));
+            htmlData += rowHtml;
+          }
+        });
+
+        htmlData += `</table>`;
+
+        if (tsvLines.length > 0) {
+          e.clipboardData.setData('text/plain', tsvLines.join('\n'));
+          e.clipboardData.setData('text/html', htmlData);
+          e.preventDefault();
+          return;
+        }
+      }
+
+      // Fallback to standard selection copy
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+
+      const range = selection.getRangeAt(0);
+      let container = range.commonAncestorContainer;
+      let table = container.nodeType === Node.ELEMENT_NODE ? container : container.parentElement;
+      while (table && table.tagName !== 'TABLE') {
+        table = table.parentElement;
+      }
+      
+      if (!table) return;
+
+      const cells = [];
+      table.querySelectorAll('th, td').forEach(cell => {
+        if (range.intersectsNode(cell)) {
+          cells.push(cell);
+        }
+      });
+
+      if (cells.length > 1) {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        const tsvLines = [];
+
+        rows.forEach(tr => {
+          const trCells = Array.from(tr.querySelectorAll('th, td'));
+          const rowCells = [];
+          let rowHasSelection = false;
+
+          trCells.forEach(cell => {
+            if (range.intersectsNode(cell)) {
+              rowHasSelection = true;
+              const text = cell.innerText.replace(/\s+/g, ' ').trim();
+              rowCells.push(text);
+            }
+          });
+
+          if (rowHasSelection && rowCells.length > 0) {
+            tsvLines.push(rowCells.join('\t'));
+          }
+        });
+
+        if (tsvLines.length > 0) {
+          e.clipboardData.setData('text/plain', tsvLines.join('\n'));
+          
+          let htmlData = `<table>`;
+          rows.forEach(tr => {
+            const trCells = Array.from(tr.querySelectorAll('th, td'));
+            let rowHasSelection = false;
+            let rowHtml = `<tr>`;
+            trCells.forEach(cell => {
+              if (range.intersectsNode(cell)) {
+                rowHasSelection = true;
+                const cellTag = cell.tagName.toLowerCase();
+                rowHtml += `<${cellTag}>${cell.innerText.replace(/\s+/g, ' ').trim()}</${cellTag}>`;
+              }
+            });
+            rowHtml += `</tr>`;
+            if (rowHasSelection) {
+              htmlData += rowHtml;
+            }
+          });
+          htmlData += `</table>`;
+          e.clipboardData.setData('text/html', htmlData);
+
+          e.preventDefault();
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseover', handleMouseOver);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('click', handleHeaderClick);
+    window.addEventListener('copy', handleGlobalCopy);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mouseover', handleMouseOver);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('click', handleHeaderClick);
+      window.removeEventListener('copy', handleGlobalCopy);
+    };
+  }, []);
+
   const courseSuccess = null;
   const setCourseSuccess = (msg) => { if (msg) toast.success(msg); };
   const courseError = null;
@@ -128,9 +350,17 @@ export const DashboardHome = () => {
 
   // HOD sub-tabs & form inputs
   const [batchTab, setBatchTab] = useState("students");
+  const [hodAttendanceSubTab, setHodAttendanceSubTab] = useState("consolidated"); // consolidated or daily
+  const [hodDailySelectedSubjectId, setHodDailySelectedSubjectId] = useState("");
+  const [hodDailySelectedDate, setHodDailySelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [hodDailyStudents, setHodDailyStudents] = useState([]);
+  const [hodDailyIsMarked, setHodDailyIsMarked] = useState(false);
+  const [hodDailyFacultyName, setHodDailyFacultyName] = useState("");
+  const [hodDailyLoading, setHodDailyLoading] = useState(false);
   const [newBatchId, setNewBatchId] = useState("");
   const [newBatchYears, setNewBatchYears] = useState("");
   const [newStudentId, setNewStudentId] = useState("");
+  const [newStudentAdmissionNumber, setNewStudentAdmissionNumber] = useState("");
   const [newStudentName, setNewStudentName] = useState("");
   const [newStudentEmail, setNewStudentEmail] = useState("");
   const [newStudentLanguage, setNewStudentLanguage] = useState("");
@@ -199,6 +429,8 @@ export const DashboardHome = () => {
   const [hodSelectedSubjectIds, setHodSelectedSubjectIds] = useState([]);
   const [hodConsolidatedData, setHodConsolidatedData] = useState(null);
   const [hodConsolidatedLoading, setHodConsolidatedLoading] = useState(false);
+  const [hodConsolidatedStartDate, setHodConsolidatedStartDate] = useState("");
+  const [hodConsolidatedEndDate, setHodConsolidatedEndDate] = useState("");
   const [hodSearchQuery, setHodSearchQuery] = useState("");
   const [hodSortCriteria, setHodSortCriteria] = useState("rollAsc");
   const [hodSemesters, setHodSemesters] = useState([]);
@@ -208,6 +440,80 @@ export const DashboardHome = () => {
   const [hodOrderedSubjectIds, setHodOrderedSubjectIds] = useState([]);
   const [draggedSubjectIdx, setDraggedSubjectIdx] = useState(null);
   const [dragOverSubjectIdx, setDragOverSubjectIdx] = useState(null);
+
+  // HOD Consolidated Assignments states
+  const [hodAssignSelectedBatch, setHodAssignSelectedBatch] = useState(null);
+  const [hodAssignSelectedSemester, setHodAssignSelectedSemester] = useState(null);
+  const [hodAssignSelectedSection, setHodAssignSelectedSection] = useState("all");
+  const [hodAssignSelectedSubjectIds, setHodAssignSelectedSubjectIds] = useState([]);
+  const [hodAssignOrderedSubjectIds, setHodAssignOrderedSubjectIds] = useState([]);
+  const [isAssignSubjectDropdownOpen, setIsAssignSubjectDropdownOpen] = useState(false);
+  const [hodAssignConsolidatedData, setHodAssignConsolidatedData] = useState(null);
+  const [hodAssignConsolidatedLoading, setHodAssignConsolidatedLoading] = useState(false);
+  const [hodAssignSearchQuery, setHodAssignSearchQuery] = useState("");
+  const [hodAssignSortCriteria, setHodAssignSortCriteria] = useState("rollAsc");
+
+  // HOD Internal Assessment states
+  const [hodIaTitle, setHodIaTitle] = useState("");
+  const [hodIaMaxMarks, setHodIaMaxMarks] = useState(50);
+  const [hodIaSelectedBatch, setHodIaSelectedBatch] = useState(null);
+  const [hodIaSelectedSemester, setHodIaSelectedSemester] = useState(null);
+  const [hodIaList, setHodIaList] = useState([]);
+  const [hodIaLoading, setHodIaLoading] = useState(false);
+  
+  // HOD Consolidated IA states
+  const [hodIaConsolidatedSelectedBatch, setHodIaConsolidatedSelectedBatch] = useState(null);
+  const [hodIaConsolidatedSelectedSemester, setHodIaConsolidatedSelectedSemester] = useState(null);
+  const [hodIaConsolidatedSelectedSection, setHodIaConsolidatedSelectedSection] = useState("all");
+  const [hodIaConsolidatedSelectedAssessment, setHodIaConsolidatedSelectedAssessment] = useState(null);
+  const [hodIaConsolidatedData, setHodIaConsolidatedData] = useState(null);
+  const [hodIaConsolidatedLoading, setHodIaConsolidatedLoading] = useState(false);
+  const [hodIaSearchQuery, setHodIaSearchQuery] = useState("");
+  const [hodIaSortCriteria, setHodIaSortCriteria] = useState("rollAsc");
+  const [hodIaActiveSubTab, setHodIaActiveSubTab] = useState("ledger"); // ledger, manage, or dynamic
+
+  // Dynamic Consolidation Sheets states
+  const [dynIaSelectedBatch, setDynIaSelectedBatch] = useState(null);
+  const [dynIaSelectedSemester, setDynIaSelectedSemester] = useState(null);
+  const [dynIaSelectedSection, setDynIaSelectedSection] = useState("all");
+  const [dynIaSemesters, setDynIaSemesters] = useState([]);
+  const [dynIaSections, setDynIaSections] = useState([]);
+  const [dynIaSubjects, setDynIaSubjects] = useState([]);
+  const [dynIaActiveSubject, setDynIaActiveSubject] = useState(null);
+  
+  const [dynIaSheetData, setDynIaSheetData] = useState(null);
+  const [dynIaSheetLoading, setDynIaSheetLoading] = useState(false);
+  const [dynIaSheetColumns, setDynIaSheetColumns] = useState([]);
+  const [dynIaSheetCustomData, setDynIaSheetCustomData] = useState([]);
+  const [dynIaEditingCell, setDynIaEditingCell] = useState(null); // { studentId, columnId }
+  const [dynIaEditValue, setDynIaEditValue] = useState("");
+  const [dynIaSaving, setDynIaSaving] = useState(false);
+  const [dynIaSearchQuery, setDynIaSearchQuery] = useState("");
+
+  // Add Column Modal states
+  const [isDynColModalOpen, setIsDynColModalOpen] = useState(false);
+  const [dynColName, setDynColName] = useState("");
+  const [dynColType, setDynColType] = useState("attendance"); // attendance, assignment, ia, custom, formula
+  const [dynColSourceId, setDynColSourceId] = useState(""); // IA assessment ID or assignment ID
+  const [dynColFormula, setDynColFormula] = useState("");
+  const [formulaSearchWord, setFormulaSearchWord] = useState("");
+  const [editingColumn, setEditingColumn] = useState(null);
+  const [editingSubject, setEditingSubject] = useState(null);
+  const [editingAllocation, setEditingAllocation] = useState(null);
+  const [draggedDynColIdx, setDraggedDynColIdx] = useState(null);
+  const [dragOverDynColIdx, setDragOverDynColIdx] = useState(null);
+  const [hodIaSelectedSubjectIds, setHodIaSelectedSubjectIds] = useState([]);
+  const [isIaSubjectDropdownOpen, setIsIaSubjectDropdownOpen] = useState(false);
+  
+  // Faculty Internal Assessment states
+  const [facultyIaSelectedSubjectId, setFacultyIaSelectedSubjectId] = useState("");
+  const [facultyIaSelectedSectionId, setFacultyIaSelectedSectionId] = useState("all");
+  const [facultyIaSelectedAssessmentId, setFacultyIaSelectedAssessmentId] = useState("");
+  const [facultyIaAssessmentsList, setFacultyIaAssessmentsList] = useState([]);
+  const [facultyIaMarksheet, setFacultyIaMarksheet] = useState([]);
+  const [facultyIaMarksheetLoading, setFacultyIaMarksheetLoading] = useState(false);
+  const [facultyIaSaving, setFacultyIaSaving] = useState(false);
+  const [facultyIaMaxMarks, setFacultyIaMaxMarks] = useState(50);
 
   // Forms
   const {
@@ -557,19 +863,21 @@ export const DashboardHome = () => {
     e.preventDefault();
     setBatchSuccess(null);
     setBatchError(null);
-    if (!newStudentId.trim() || !newStudentName.trim() || !newStudentEmail.trim() || !newStudentLanguage.trim()) {
-      setBatchError("All student fields are required including language Subject ID selection/entry");
+    if (!newStudentAdmissionNumber.trim() || !newStudentName.trim() || !newStudentEmail.trim() || !newStudentLanguage.trim()) {
+      setBatchError("Admission number, name, email, and language are required");
       return;
     }
     try {
       const response = await api.post(`/api/batches/${selectedBatch._id}/students`, {
-        studentId: newStudentId,
+        admissionNumber: newStudentAdmissionNumber,
+        studentId: newStudentId.trim() || undefined,
         fullName: newStudentName,
         email: newStudentEmail,
         language: newStudentLanguage,
       });
       if (response.data.success) {
         setBatchSuccess("Student registered successfully");
+        setNewStudentAdmissionNumber("");
         setNewStudentId("");
         setNewStudentName("");
         setNewStudentEmail("");
@@ -596,21 +904,21 @@ export const DashboardHome = () => {
       if (!line) continue;
       
       const parts = line.split(",").map(p => p.trim().replace(/^["']|["']$/g, ""));
-      if (parts.length < 4) {
-        setBatchError(`Row ${i + 1} has insufficient columns. Required format: ID, Name, Email, Language`);
+      if (parts.length < 5) {
+        setBatchError(`Row ${i + 1} has insufficient columns. Required format: AdmissionNumber, StudentID, Name, Email, Language`);
         return;
       }
       
-      const [studentId, fullName, email, language] = parts;
-      if (!studentId || !fullName || !email || !language) {
-        setBatchError(`Row ${i + 1} has empty values.`);
+      const [admissionNumber, studentId, fullName, email, language] = parts;
+      if (!admissionNumber || !fullName || !email || !language) {
+        setBatchError(`Row ${i + 1} has empty values (AdmissionNumber, Name, Email, and Language are required).`);
         return;
       }
 
       const cleanLang = language.toUpperCase().trim();
       
       // Skip header row if present
-      if (i === 0 && (studentId.toLowerCase().includes("id") || fullName.toLowerCase().includes("name") || email.toLowerCase().includes("email") || language.toLowerCase().includes("lang"))) {
+      if (i === 0 && (admissionNumber.toLowerCase().includes("admission") || studentId.toLowerCase().includes("id") || fullName.toLowerCase().includes("name") || email.toLowerCase().includes("email") || language.toLowerCase().includes("lang"))) {
         continue;
       }
 
@@ -625,7 +933,7 @@ export const DashboardHome = () => {
         return;
       }
       
-      parsed.push({ studentId, fullName, email, language: cleanLang });
+      parsed.push({ admissionNumber, studentId: studentId.trim() || undefined, fullName, email, language: cleanLang });
     }
     setCsvPreview(parsed);
     setBatchSuccess(`Parsed ${parsed.length} rows successfully. Please click upload bulk to save.`);
@@ -652,7 +960,7 @@ export const DashboardHome = () => {
     const lang1 = batchLanguages.length > 0 ? batchLanguages[0].subjectId : "KAN101";
     const lang2 = batchLanguages.length > 1 ? batchLanguages[1].subjectId : "HIN101";
     const lang3 = batchLanguages.length > 2 ? batchLanguages[2].subjectId : "MAL101";
-    const csvContent = `data:text/csv;charset=utf-8,studentId,fullName,email,language\nSTU202301,John Doe,john@example.com,${lang1}\nSTU202302,Jane Smith,jane@example.com,${lang2}\nSTU202303,David Miller,david@example.com,${lang3}`;
+    const csvContent = `data:text/csv;charset=utf-8,admissionNumber,studentId,fullName,email,language\nADM202301,STU202301,John Doe,john@example.com,${lang1}\nADM202302,STU202302,Jane Smith,jane@example.com,${lang2}\nADM202303,STU202303,David Miller,david@example.com,${lang3}`;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -737,21 +1045,38 @@ export const DashboardHome = () => {
       return;
     }
     try {
-      const response = await api.post("/api/subjects", {
-        subjectId: newSubjectId,
-        name: newSubjectName,
-        semesterId: selectedSemester._id,
-        subjectType: newSubjectType,
-      });
-      if (response.data.success) {
-        setAllocSuccess("Subject created successfully");
-        setNewSubjectId("");
-        setNewSubjectName("");
-        setNewSubjectType("regular");
-        fetchSubjects(selectedSemester._id);
+      if (editingSubject) {
+        const response = await api.put(`/api/subjects/${editingSubject._id}`, {
+          subjectId: newSubjectId,
+          name: newSubjectName,
+          subjectType: newSubjectType,
+        });
+        if (response.data.success) {
+          setAllocSuccess("Subject updated successfully");
+          setNewSubjectId("");
+          setNewSubjectName("");
+          setNewSubjectType("regular");
+          setEditingSubject(null);
+          fetchSubjects(selectedSemester._id);
+          fetchSubjectAllocations(selectedSemester._id);
+        }
+      } else {
+        const response = await api.post("/api/subjects", {
+          subjectId: newSubjectId,
+          name: newSubjectName,
+          semesterId: selectedSemester._id,
+          subjectType: newSubjectType,
+        });
+        if (response.data.success) {
+          setAllocSuccess("Subject created successfully");
+          setNewSubjectId("");
+          setNewSubjectName("");
+          setNewSubjectType("regular");
+          fetchSubjects(selectedSemester._id);
+        }
       }
     } catch (err) {
-      setAllocError(err.response?.data?.message || "Failed to create subject");
+      setAllocError(err.response?.data?.message || "Failed to save subject");
     }
   };
 
@@ -779,21 +1104,37 @@ export const DashboardHome = () => {
       return;
     }
     try {
-      const response = await api.post("/api/subjects/allocations", {
-        subjectId: selectedAllocSubjectId,
-        semesterId: selectedSemester._id,
-        sectionId: selectedAllocSectionId || null,
-        facultyId: selectedAllocFacultyId,
-      });
-      if (response.data.success) {
-        setAllocSuccess("Subject allocated to faculty successfully");
-        setSelectedAllocSubjectId("");
-        setSelectedAllocSectionId("");
-        setSelectedAllocFacultyId("");
-        fetchSubjectAllocations(selectedSemester._id);
+      if (editingAllocation) {
+        const response = await api.put(`/api/subjects/allocations/${editingAllocation._id}`, {
+          subjectId: selectedAllocSubjectId,
+          sectionId: selectedAllocSectionId || null,
+          facultyId: selectedAllocFacultyId,
+        });
+        if (response.data.success) {
+          setAllocSuccess("Allocation updated successfully");
+          setSelectedAllocSubjectId("");
+          setSelectedAllocSectionId("");
+          setSelectedAllocFacultyId("");
+          setEditingAllocation(null);
+          fetchSubjectAllocations(selectedSemester._id);
+        }
+      } else {
+        const response = await api.post("/api/subjects/allocations", {
+          subjectId: selectedAllocSubjectId,
+          semesterId: selectedSemester._id,
+          sectionId: selectedAllocSectionId || null,
+          facultyId: selectedAllocFacultyId,
+        });
+        if (response.data.success) {
+          setAllocSuccess("Subject allocated to faculty successfully");
+          setSelectedAllocSubjectId("");
+          setSelectedAllocSectionId("");
+          setSelectedAllocFacultyId("");
+          fetchSubjectAllocations(selectedSemester._id);
+        }
       }
     } catch (err) {
-      setAllocError(err.response?.data?.message || "Failed to allocate subject");
+      setAllocError(err.response?.data?.message || "Failed to save allocation");
     }
   };
 
@@ -1112,7 +1453,7 @@ export const DashboardHome = () => {
       });
     });
 
-    const studentsList = Object.values(studentMap).sort((a, b) => a.studentId.localeCompare(b.studentId));
+    const studentsList = Object.values(studentMap).sort((a, b) => (a.studentId || "").localeCompare(b.studentId || ""));
 
     let html = `
 <html>
@@ -1154,7 +1495,7 @@ export const DashboardHome = () => {
     studentsList.forEach(student => {
       html += `
       <tr>
-        <td>${student.studentId}</td>
+        <td>${student.studentId || '—'}</td>
         <td>${student.fullName}</td>
         <td style="text-transform: uppercase;">${student.language}</td>`;
 
@@ -1255,7 +1596,7 @@ export const DashboardHome = () => {
       studentsList.forEach(student => {
         html += `
       <tr>
-        <td>${student.studentId}</td>
+        <td>${student.studentId || '—'}</td>
         <td>${student.fullName}</td>
         <td style="text-transform: uppercase;">${student.language || 'N/A'}</td>`;
 
@@ -1329,7 +1670,7 @@ export const DashboardHome = () => {
     consolidatedData.forEach(row => {
       html += `
       <tr>
-        <td>${row.studentId}</td>
+        <td>${row.studentId || '—'}</td>
         <td>${row.fullName}</td>
         <td style="text-transform: uppercase;">${row.language || 'N/A'}</td>
         <td class="center">${row.presentCount}</td>
@@ -1409,12 +1750,15 @@ export const DashboardHome = () => {
     }
   };
 
-  const fetchHODConsolidatedAttendance = async (semId, secId) => {
+  const fetchHODConsolidatedAttendance = async (semId, secId, start = "", end = "") => {
     if (!semId) return;
     setHodConsolidatedLoading(true);
     setHodConsolidatedData(null);
     try {
-      const response = await api.get(`/api/attendance/hod/consolidated?semesterId=${semId}&sectionId=${secId || 'all'}&subjectId=all`);
+      let url = `/api/attendance/hod/consolidated?semesterId=${semId}&sectionId=${secId || 'all'}&subjectId=all`;
+      if (start) url += `&startDate=${start}`;
+      if (end) url += `&endDate=${end}`;
+      const response = await api.get(url);
       if (response.data.success) {
         setHodConsolidatedData(response.data);
       }
@@ -1422,6 +1766,63 @@ export const DashboardHome = () => {
       console.error("Failed to fetch HOD consolidated attendance", err);
     } finally {
       setHodConsolidatedLoading(false);
+    }
+  };
+
+  const fetchHODDailyAttendance = async () => {
+    if (!hodSelectedSemester || !hodDailySelectedSubjectId || !hodDailySelectedDate) return;
+    setHodDailyLoading(true);
+    try {
+      const response = await api.get(`/api/attendance/hod/daily-attendance`, {
+        params: {
+          subjectId: hodDailySelectedSubjectId,
+          semesterId: hodSelectedSemester._id,
+          sectionId: hodSelectedSection === "all" ? "" : hodSelectedSection,
+          date: hodDailySelectedDate,
+        }
+      });
+      if (response.data.success) {
+        setHodDailyStudents(response.data.data);
+        setHodDailyIsMarked(response.data.isMarked);
+        setHodDailyFacultyName(response.data.facultyName);
+      }
+    } catch (err) {
+      console.error("Failed to fetch HOD daily attendance", err);
+      toast.error("Failed to load daily attendance roster.");
+    } finally {
+      setHodDailyLoading(false);
+    }
+  };
+
+  const onSaveHODDailyAttendance = async () => {
+    if (!hodSelectedSemester || !hodDailySelectedSubjectId || !hodDailySelectedDate) return;
+    try {
+      const records = hodDailyStudents.map(s => ({
+        studentId: s._id,
+        status: s.status,
+      }));
+      const response = await api.post(`/api/attendance/hod/daily-attendance`, {
+        subjectId: hodDailySelectedSubjectId,
+        semesterId: hodSelectedSemester._id,
+        sectionId: hodSelectedSection === "all" ? "" : hodSelectedSection,
+        date: hodDailySelectedDate,
+        records,
+      });
+      if (response.data.success) {
+        toast.success("Attendance updated successfully!");
+        fetchHODDailyAttendance();
+        if (hodSelectedSemester) {
+          fetchHODConsolidatedAttendance(
+            hodSelectedSemester._id,
+            hodSelectedSection,
+            hodConsolidatedStartDate,
+            hodConsolidatedEndDate
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to save daily attendance", err);
+      toast.error(err.response?.data?.message || "Failed to update daily attendance.");
     }
   };
 
@@ -1481,6 +1882,35 @@ export const DashboardHome = () => {
     setDragOverSubjectIdx(null);
   };
 
+  const handleDynColDragStart = (e, index) => {
+    setDraggedDynColIdx(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index);
+  };
+
+  const handleDynColDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedDynColIdx === index) return;
+    setDragOverDynColIdx(index);
+  };
+
+  const handleDynColDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedDynColIdx === null || draggedDynColIdx === index) return;
+
+    setDynIaSheetColumns(prev => {
+      const updated = [...prev];
+      const [draggedItem] = updated.splice(draggedDynColIdx, 1);
+      updated.splice(index, 0, draggedItem);
+      return updated;
+    });
+  };
+
+  const handleDynColDragEnd = () => {
+    setDraggedDynColIdx(null);
+    setDragOverDynColIdx(null);
+  };
+
   const getStudentOverallAttendance = (row) => {
     let sumPercentages = 0;
     let count = 0;
@@ -1503,6 +1933,98 @@ export const DashboardHome = () => {
 
     if (count === 0) return 'N/A';
     return parseFloat((sumPercentages / count).toFixed(2));
+  };
+
+  const copyHODConsolidatedAttendanceToClipboard = () => {
+    if (!hodConsolidatedData || !hodConsolidatedData.data || hodConsolidatedData.data.length === 0) return;
+
+    const subjectsList = hodConsolidatedData?.subjects || [];
+    const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+    const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+    const showLanguageColumn = hodSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
+
+    const activeOrderedSubjectIds = hodOrderedSubjectIds.filter(id => 
+      (id === 'language' && showLanguageColumn) || 
+      (id !== 'language' && hodSelectedSubjectIds.includes(id))
+    );
+
+    let rows = [];
+
+    // Header 1
+    let header1 = ["Sl. No.", "Register Number", "Student Name", "Language Choice"];
+    activeOrderedSubjectIds.forEach(subjectId => {
+      if (subjectId === 'language') {
+        header1.push("Language", "", "");
+      } else {
+        const sub = subjectsList.find(s => s._id === subjectId);
+        header1.push(sub ? sub.subjectId : "", "", "");
+      }
+    });
+    header1.push("Overall Attendance (%)");
+    rows.push(header1.join("\t"));
+
+    // Header 2
+    let header2 = ["", "", "", ""];
+    activeOrderedSubjectIds.forEach(() => {
+      header2.push("CT", "AT", "%");
+    });
+    header2.push("");
+    rows.push(header2.join("\t"));
+
+    // Data rows
+    getFilteredAndSortedHODData().forEach((row, idx) => {
+      let dataRow = [
+        (idx + 1).toString(),
+        row.studentId,
+        row.fullName,
+        (row.language || 'N/A').toUpperCase()
+      ];
+
+      activeOrderedSubjectIds.forEach(subjectId => {
+        if (subjectId === 'language') {
+          const studentLangSub = languageSubjects.find(sub => {
+            const subAtt = row.attendance?.[sub._id];
+            return subAtt && subAtt.isEnrolled;
+          });
+
+          if (!studentLangSub) {
+            dataRow.push("N/A", "N/A", "N/A");
+          } else {
+            const subAtt = row.attendance?.[studentLangSub._id];
+            if (!subAtt || subAtt.totalClasses === 0) {
+              dataRow.push("0", "0", "-");
+            } else {
+              dataRow.push(subAtt.totalClasses.toString(), subAtt.presentCount.toString(), `${subAtt.percentage}%`);
+            }
+          }
+        } else {
+          const sub = subjectsList.find(s => s._id === subjectId);
+          const subAtt = sub ? row.attendance?.[sub._id] : null;
+          if (subAtt) {
+            if (!subAtt.isEnrolled) {
+              dataRow.push("N/A", "N/A", "N/A");
+            } else {
+              dataRow.push(subAtt.totalClasses.toString(), subAtt.presentCount.toString(), `${subAtt.percentage}%`);
+            }
+          } else {
+            dataRow.push("0", "0", "-");
+          }
+        }
+      });
+
+      const overall = getStudentOverallAttendance(row);
+      dataRow.push(overall === 'N/A' ? 'N/A' : `${overall}%`);
+      rows.push(dataRow.join("\t"));
+    });
+
+    navigator.clipboard.writeText(rows.join("\n"))
+      .then(() => {
+        toast.success("Table data copied to clipboard! You can paste it into Excel.");
+      })
+      .catch(err => {
+        console.error("Failed to copy table data", err);
+        toast.error("Failed to copy table data to clipboard.");
+      });
   };
 
   const downloadHODConsolidatedExcel = () => {
@@ -1562,7 +2084,7 @@ export const DashboardHome = () => {
       html += `
       <tr>
         <td class="center">${idx + 1}</td>
-        <td>${row.studentId}</td>
+        <td>${row.studentId || '—'}</td>
         <td>${row.fullName}</td>
         <td class="center" style="text-transform: uppercase;">${row.language || 'N/A'}</td>`;
 
@@ -1627,15 +2149,15 @@ export const DashboardHome = () => {
       const q = hodSearchQuery.toLowerCase();
       list = list.filter(item => 
         item.fullName.toLowerCase().includes(q) || 
-        item.studentId.toLowerCase().includes(q)
+        (item.studentId || "").toLowerCase().includes(q)
       );
     }
 
     list.sort((a, b) => {
       if (hodSortCriteria === "rollAsc") {
-        return a.studentId.localeCompare(b.studentId);
+        return (a.studentId || "").localeCompare(b.studentId || "");
       } else if (hodSortCriteria === "rollDesc") {
-        return b.studentId.localeCompare(a.studentId);
+        return (b.studentId || "").localeCompare(a.studentId || "");
       } else if (hodSortCriteria === "nameAsc") {
         return a.fullName.localeCompare(b.fullName);
       } else if (hodSortCriteria === "pctAsc") {
@@ -1664,6 +2186,8 @@ export const DashboardHome = () => {
       setHodSelectedSection("");
       setHodSelectedSubjectIds([]);
       setHodConsolidatedData(null);
+      setHodConsolidatedStartDate("");
+      setHodConsolidatedEndDate("");
     }
   }, [hodSelectedBatch]);
 
@@ -1674,17 +2198,1127 @@ export const DashboardHome = () => {
       setHodSelectedSection("");
       setHodSelectedSubjectIds([]);
       setHodConsolidatedData(null);
+      setHodConsolidatedStartDate("");
+      setHodConsolidatedEndDate("");
     }
   }, [hodSelectedSemester]);
+
+  useEffect(() => {
+    if (hodAttendanceSubTab === "daily") {
+      fetchHODDailyAttendance();
+    }
+  }, [hodAttendanceSubTab, hodSelectedSemester?._id, hodSelectedSection, hodDailySelectedSubjectId, hodDailySelectedDate]);
 
   useEffect(() => {
     if (hodSelectedSemester) {
       fetchHODConsolidatedAttendance(
         hodSelectedSemester._id,
-        hodSelectedSection
+        hodSelectedSection,
+        hodConsolidatedStartDate,
+        hodConsolidatedEndDate
       );
     }
-  }, [hodSelectedSemester, hodSelectedSection]);
+  }, [hodSelectedSemester, hodSelectedSection, hodConsolidatedStartDate, hodConsolidatedEndDate]);
+
+  const fetchHODConsolidatedAssignments = async (semId, secId) => {
+    if (!semId) return;
+    setHodAssignConsolidatedLoading(true);
+    setHodAssignConsolidatedData(null);
+    try {
+      const response = await api.get(`/api/assignments/hod/consolidated?semesterId=${semId}&sectionId=${secId || 'all'}&subjectId=all`);
+      if (response.data.success) {
+        setHodAssignConsolidatedData(response.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch HOD consolidated assignments", err);
+    } finally {
+      setHodAssignConsolidatedLoading(false);
+    }
+  };
+
+  const getFilteredAndSortedAssignData = () => {
+    if (!hodAssignConsolidatedData || !hodAssignConsolidatedData.data) return [];
+    let list = [...hodAssignConsolidatedData.data];
+
+    if (hodAssignSearchQuery.trim() !== "") {
+      const q = hodAssignSearchQuery.toLowerCase().trim();
+      list = list.filter(r => 
+        (r.fullName && r.fullName.toLowerCase().includes(q)) ||
+        (r.studentId && r.studentId.toLowerCase().includes(q))
+      );
+    }
+
+    list.sort((a, b) => {
+      if (hodAssignSortCriteria === "rollAsc") {
+        return (a.studentId || "").localeCompare(b.studentId || "");
+      } else if (hodAssignSortCriteria === "rollDesc") {
+        return (b.studentId || "").localeCompare(a.studentId || "");
+      } else if (hodAssignSortCriteria === "nameAsc") {
+        return a.fullName.localeCompare(b.fullName);
+      } else if (hodAssignSortCriteria === "pctAsc") {
+        const valA = a.overallPercentage;
+        const valB = b.overallPercentage;
+        const numA = valA === 'N/A' ? -1 : valA;
+        const numB = valB === 'N/A' ? -1 : valB;
+        return numA - numB;
+      } else if (hodAssignSortCriteria === "pctDesc") {
+        const valA = a.overallPercentage;
+        const valB = b.overallPercentage;
+        const numA = valA === 'N/A' ? -1 : valA;
+        const numB = valB === 'N/A' ? -1 : valB;
+        return numB - numA;
+      }
+      return 0;
+    });
+
+    return list;
+  };
+
+  const copyHODConsolidatedAssignmentsToClipboard = () => {
+    if (!hodAssignConsolidatedData || !hodAssignConsolidatedData.data || hodAssignConsolidatedData.data.length === 0) return;
+
+    const subjectsList = hodAssignConsolidatedData?.subjects || [];
+    const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+    const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+    const showLanguageColumn = hodAssignSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
+
+    const activeOrderedSubjectIds = hodAssignOrderedSubjectIds.filter(id => 
+      (id === 'language' && showLanguageColumn) || 
+      (id !== 'language' && hodAssignSelectedSubjectIds.includes(id))
+    );
+
+    let rows = [];
+
+    // Header 1
+    let header1 = ["Sl. No.", "Register Number", "Student Name", "Language Choice"];
+    activeOrderedSubjectIds.forEach(subjectId => {
+      if (subjectId === 'language') {
+        header1.push("Language", "", "");
+      } else {
+        const sub = subjectsList.find(s => s._id === subjectId);
+        header1.push(sub ? sub.subjectId : "", "", "");
+      }
+    });
+    header1.push("Overall Submission (%)");
+    rows.push(header1.join("\t"));
+
+    // Header 2
+    let header2 = ["", "", "", ""];
+    activeOrderedSubjectIds.forEach(() => {
+      header2.push("TA", "SA", "%");
+    });
+    header2.push("");
+    rows.push(header2.join("\t"));
+
+    // Data rows
+    getFilteredAndSortedAssignData().forEach((row, idx) => {
+      let dataRow = [
+        (idx + 1).toString(),
+        row.studentId,
+        row.fullName,
+        (row.language || 'N/A').toUpperCase()
+      ];
+
+      activeOrderedSubjectIds.forEach(subjectId => {
+        if (subjectId === 'language') {
+          const studentLangSub = languageSubjects.find(sub => {
+            const subAssign = row.assignments?.[sub._id];
+            return subAssign && subAssign.isEnrolled;
+          });
+
+          if (!studentLangSub) {
+            dataRow.push("N/A", "N/A", "N/A");
+          } else {
+            const subAssign = row.assignments?.[studentLangSub._id];
+            if (!subAssign || subAssign.TA === 0) {
+              dataRow.push("0", "0", "-");
+            } else {
+              dataRow.push(subAssign.TA.toString(), subAssign.SA.toString(), `${subAssign.percentage}%`);
+            }
+          }
+        } else {
+          const sub = subjectsList.find(s => s._id === subjectId);
+          const subAssign = sub ? row.assignments?.[sub._id] : null;
+          if (subAssign) {
+            if (!subAssign.isEnrolled) {
+              dataRow.push("N/A", "N/A", "N/A");
+            } else {
+              dataRow.push(subAssign.TA.toString(), subAssign.SA.toString(), `${subAssign.percentage}%`);
+            }
+          } else {
+            dataRow.push("0", "0", "-");
+          }
+        }
+      });
+
+      const overall = row.overallPercentage;
+      dataRow.push(overall === 'N/A' ? 'N/A' : `${overall}%`);
+      rows.push(dataRow.join("\t"));
+    });
+
+    navigator.clipboard.writeText(rows.join("\n"))
+      .then(() => {
+        toast.success("Table data copied to clipboard! You can paste it into Excel.");
+      })
+      .catch(err => {
+        console.error("Failed to copy table data", err);
+        toast.error("Failed to copy table data to clipboard.");
+      });
+  };
+
+  const downloadHODConsolidatedAssignmentsExcel = () => {
+    if (!hodAssignConsolidatedData || !hodAssignConsolidatedData.data || hodAssignConsolidatedData.data.length === 0) return;
+
+    const subjectsList = hodAssignConsolidatedData?.subjects || [];
+    const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+    const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+    const showLanguageColumn = hodAssignSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
+
+    const activeOrderedSubjectIds = hodAssignOrderedSubjectIds.filter(id => 
+      (id === 'language' && showLanguageColumn) || 
+      (id !== 'language' && hodAssignSelectedSubjectIds.includes(id))
+    );
+
+    let html = `<html xmlns:o="urn:schemas-microsoft-excel:office:office" xmlns:x="urn:schemas-microsoft-excel:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; }
+  table { border-collapse: collapse; width: 100%; font-family: 'Segoe UI', Arial, sans-serif; }
+  th, td { border: 1px solid #000000; padding: 10px 14px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; text-align: left; }
+  th { background-color: #f3f4f6; font-weight: bold; }
+  .title { font-size: 18px; font-weight: bold; margin-bottom: 10px; font-family: 'Segoe UI', Arial, sans-serif; }
+  .center { text-align: center; }
+  .right { text-align: right; }
+</style>
+</head>
+<body>
+  <div class="title">CONSOLIDATED ASSIGNMENT REPORT</div>
+  <br/>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2" class="center">Sl. No.</th>
+        <th rowspan="2">Register Number</th>
+        <th rowspan="2">Student Name</th>
+        <th rowspan="2" class="center">Language Choice</th>`;
+
+    activeOrderedSubjectIds.forEach(subjectId => {
+      if (subjectId === 'language') {
+        html += `
+          <th colspan="3" class="center">Language</th>`;
+      } else {
+        const sub = subjectsList.find(s => s._id === subjectId);
+        if (sub) {
+          html += `
+            <th colspan="3" class="center">${sub.subjectId}</th>`;
+        }
+      }
+    });
+
+    html += `
+        <th rowspan="2" class="right">Overall Submission (%)</th>
+      </tr>
+      <tr>`;
+
+    activeOrderedSubjectIds.forEach(() => {
+      html += `<th class="center">TA</th><th class="center">SA</th><th class="center">%</th>`;
+    });
+
+    html += `
+      </tr>
+    </thead>
+    <tbody>`;
+
+    getFilteredAndSortedAssignData().forEach((row, idx) => {
+      const overall = row.overallPercentage;
+      html += `
+      <tr>
+        <td class="center">${idx + 1}</td>
+        <td>${row.studentId || '—'}</td>
+        <td>${row.fullName}</td>
+        <td class="center" style="text-transform: uppercase;">${row.language || 'N/A'}</td>`;
+
+      activeOrderedSubjectIds.forEach(subjectId => {
+        if (subjectId === 'language') {
+          const studentLangSub = languageSubjects.find(sub => {
+            const subAssign = row.assignments?.[sub._id];
+            return subAssign && subAssign.isEnrolled;
+          });
+
+          if (!studentLangSub) {
+            html += `<td class="center">N/A</td><td class="center">N/A</td><td class="center">N/A</td>`;
+          } else {
+            const subAssign = row.assignments?.[studentLangSub._id];
+            if (!subAssign || subAssign.TA === 0) {
+              html += `<td class="center">0</td><td class="center">0</td><td class="center">-</td>`;
+            } else {
+              html += `
+              <td class="center">${subAssign.TA}</td>
+              <td class="center">${subAssign.SA}</td>
+              <td class="center">${subAssign.percentage}%</td>`;
+            }
+          }
+        } else {
+          const sub = subjectsList.find(s => s._id === subjectId);
+          const subAssign = sub ? row.assignments?.[sub._id] : null;
+          if (subAssign) {
+            if (!subAssign.isEnrolled) {
+              html += `<td class="center">N/A</td><td class="center">N/A</td><td class="center">N/A</td>`;
+            } else {
+              html += `
+              <td class="center">${subAssign.TA}</td>
+              <td class="center">${subAssign.SA}</td>
+              <td class="center">${subAssign.percentage === 'N/A' ? 'N/A' : subAssign.percentage + '%'}</td>`;
+            }
+          } else {
+            html += `<td class="center">0</td><td class="center">0</td><td class="center">-</td>`;
+          }
+        }
+      });
+
+      html += `
+        <td class="right" style="font-weight: bold;">${overall === 'N/A' ? 'N/A' : overall + '%'}</td>
+      </tr>`;
+    });
+
+    html += `
+    </tbody>
+  </table>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `consolidated_assignment_report.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  useEffect(() => {
+    if (hodAssignSelectedBatch) {
+      fetchHODSemesters(hodAssignSelectedBatch._id);
+      setHodAssignSelectedSemester(null);
+      setHodAssignSelectedSection("all");
+      setHodAssignSelectedSubjectIds([]);
+      setHodAssignOrderedSubjectIds([]);
+      setHodAssignConsolidatedData(null);
+    }
+  }, [hodAssignSelectedBatch]);
+
+  useEffect(() => {
+    if (hodAssignSelectedSemester) {
+      fetchHODSections(hodAssignSelectedSemester._id);
+      fetchHODSubjects(hodAssignSelectedSemester._id);
+      setHodAssignSelectedSection("all");
+      setHodAssignSelectedSubjectIds([]);
+      setHodAssignOrderedSubjectIds([]);
+      setHodAssignConsolidatedData(null);
+    }
+  }, [hodAssignSelectedSemester]);
+
+  useEffect(() => {
+    if (hodSubjects && hodSubjects.length > 0) {
+      const regularIds = hodSubjects.filter(s => s.subjectType !== 'language').map(s => s._id);
+      const hasLang = hodSubjects.some(s => s.subjectType === 'language');
+      const allIds = hasLang ? [...regularIds, "language"] : regularIds;
+      setHodAssignSelectedSubjectIds(allIds);
+      setHodAssignOrderedSubjectIds(allIds);
+    }
+  }, [hodSubjects]);
+
+  useEffect(() => {
+    if (hodAssignSelectedSemester) {
+      fetchHODConsolidatedAssignments(
+        hodAssignSelectedSemester._id,
+        hodAssignSelectedSection
+      );
+    }
+  }, [hodAssignSelectedSemester, hodAssignSelectedSection]);
+
+  // HOD/Faculty Internal Assessment functions
+  const fetchHODInternalAssessments = async (semId) => {
+    if (!semId) return;
+    setHodIaLoading(true);
+    try {
+      const response = await api.get(`/api/internal-assessments?semesterId=${semId}`);
+      if (response.data.success) {
+        setHodIaList(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch internal assessments", err);
+      toast.error("Failed to fetch internal assessments.");
+    } finally {
+      setHodIaLoading(false);
+    }
+  };
+
+  const createHODInternalAssessment = async (e) => {
+    e.preventDefault();
+    if (!hodIaTitle.trim()) {
+      toast.error("Please enter a title.");
+      return;
+    }
+    if (!hodIaSelectedBatch || !hodIaSelectedSemester) {
+      toast.error("Please select Batch and Semester.");
+      return;
+    }
+
+    try {
+      const response = await api.post("/api/internal-assessments", {
+        title: hodIaTitle.trim(),
+        maxMarks: 50,
+        batch: hodIaSelectedBatch._id,
+        semester: hodIaSelectedSemester._id,
+      });
+
+      if (response.data.success) {
+        toast.success("Internal Assessment created successfully!");
+        setHodIaTitle("");
+        fetchHODInternalAssessments(hodIaSelectedSemester._id);
+      }
+    } catch (err) {
+      console.error("Failed to create internal assessment", err);
+      toast.error(err.response?.data?.message || "Failed to create assessment.");
+    }
+  };
+
+  const deleteHODInternalAssessment = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this internal assessment and all submitted marks?")) return;
+    try {
+      const response = await api.delete(`/api/internal-assessments/${id}`);
+      if (response.data.success) {
+        toast.success("Internal Assessment deleted successfully.");
+        if (hodIaSelectedSemester) {
+          fetchHODInternalAssessments(hodIaSelectedSemester._id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete internal assessment", err);
+      toast.error("Failed to delete assessment.");
+    }
+  };
+
+  const fetchHODConsolidatedIA = async (semId, secId, iaId) => {
+    if (!semId || !iaId) return;
+    setHodIaConsolidatedLoading(true);
+    setHodIaConsolidatedData(null);
+    try {
+      const response = await api.get(
+        `/api/internal-assessments/hod/consolidated?semesterId=${semId}&sectionId=${secId || "all"}&internalAssessmentId=${iaId}`
+      );
+      if (response.data.success) {
+        setHodIaConsolidatedData(response.data);
+        const subjectsList = response.data.subjects || [];
+        const regularIds = subjectsList.filter(s => s.subjectType !== 'language').map(s => s._id);
+        const hasLang = subjectsList.some(s => s.subjectType === 'language');
+        setHodIaSelectedSubjectIds(hasLang ? [...regularIds, "language"] : regularIds);
+      }
+    } catch (err) {
+      console.error("Failed to fetch consolidated IA marks", err);
+      toast.error("Failed to fetch consolidated report.");
+    } finally {
+      setHodIaConsolidatedLoading(false);
+    }
+  };
+
+  const getFilteredAndSortedIaData = () => {
+    if (!hodIaConsolidatedData || !hodIaConsolidatedData.data) return [];
+    let list = [...hodIaConsolidatedData.data];
+
+    if (hodIaSearchQuery.trim() !== "") {
+      const q = hodIaSearchQuery.toLowerCase().trim();
+      list = list.filter(
+        (r) =>
+          (r.fullName && r.fullName.toLowerCase().includes(q)) ||
+          (r.studentId && r.studentId.toLowerCase().includes(q))
+      );
+    }
+
+    list.sort((a, b) => {
+      if (hodIaSortCriteria === "rollAsc") {
+        return (a.studentId || "").localeCompare(b.studentId || "");
+      } else if (hodIaSortCriteria === "rollDesc") {
+        return (b.studentId || "").localeCompare(a.studentId || "");
+      } else if (hodIaSortCriteria === "nameAsc") {
+        return a.fullName.localeCompare(b.fullName);
+      } else if (hodIaSortCriteria === "pctAsc") {
+        const valA = a.overallPercentage;
+        const valB = b.overallPercentage;
+        const numA = valA === "N/A" ? -1 : valA;
+        const numB = valB === "N/A" ? -1 : valB;
+        return numA - numB;
+      } else if (hodIaSortCriteria === "pctDesc") {
+        const valA = a.overallPercentage;
+        const valB = b.overallPercentage;
+        const numA = valA === "N/A" ? -1 : valA;
+        const numB = valB === "N/A" ? -1 : valB;
+        return numB - numA;
+      }
+      return 0;
+    });
+
+    return list;
+  };
+
+  const downloadHODConsolidatedIaExcel = () => {
+    if (!hodIaConsolidatedData || !hodIaConsolidatedData.data || hodIaConsolidatedData.data.length === 0) return;
+
+    const subjectsList = hodIaConsolidatedData?.subjects || [];
+    const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+    const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+    const showLanguageColumn = hodIaSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
+
+    const activeOrderedSubjectIds = [
+      ...regularSubjects.filter(sub => hodIaSelectedSubjectIds.includes(sub._id)).map(s => s._id),
+      ...(showLanguageColumn ? ["language"] : [])
+    ];
+    const maxMarks = hodIaConsolidatedData?.assessment?.maxMarks || 50;
+
+    let html = `<html xmlns:o="urn:schemas-microsoft-excel:office:excel" xmlns:x="urn:schemas-microsoft-excel:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; }
+  table { border-collapse: collapse; width: 100%; font-family: 'Segoe UI', Arial, sans-serif; }
+  th, td { border: 1px solid #000000; padding: 10px 14px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; text-align: left; }
+  th { background-color: #f3f4f6; font-weight: bold; }
+  .title { font-size: 18px; font-weight: bold; margin-bottom: 10px; font-family: 'Segoe UI', Arial, sans-serif; }
+  .center { text-align: center; }
+  .right { text-align: right; }
+</style>
+</head>
+<body>
+  <div class="title">CONSOLIDATED INTERNAL ASSESSMENT REPORT - ${hodIaConsolidatedData?.assessment?.title?.toUpperCase()} (MAX MARKS: ${maxMarks})</div>
+  <br/>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2" class="center">Sl. No.</th>
+        <th rowspan="2">Register Number</th>
+        <th rowspan="2">Student Name</th>
+        <th rowspan="2" class="center">Language Choice</th>`;
+
+    activeOrderedSubjectIds.forEach(subjectId => {
+      if (subjectId === 'language') {
+        html += `<th colspan="3" class="center">Language</th>`;
+      } else {
+        const sub = subjectsList.find(s => s._id === subjectId);
+        html += `<th colspan="3" class="center">${sub ? sub.subjectId : ""}</th>`;
+      }
+    });
+
+    html += `
+        <th rowspan="2" class="right">Overall Percentage (%)</th>
+      </tr>
+      <tr>`;
+
+    activeOrderedSubjectIds.forEach(() => {
+      html += `<th class="center">Max</th><th class="center">Scored</th><th class="center">%</th>`;
+    });
+
+    html += `
+      </tr>
+    </thead>
+    <tbody>`;
+
+    getFilteredAndSortedIaData().forEach((row, idx) => {
+      let visibleSum = 0;
+      let visibleCount = 0;
+
+      activeOrderedSubjectIds.forEach(subjectId => {
+        if (subjectId === 'language') {
+          const studentLangSub = languageSubjects.find(sub => {
+            const entry = row.marks?.[sub._id];
+            return entry && entry.isEnrolled;
+          });
+          if (studentLangSub) {
+            const entry = row.marks?.[studentLangSub._id];
+            if (entry && entry.percentage !== 'N/A') {
+              visibleSum += entry.percentage;
+              visibleCount++;
+            }
+          }
+        } else {
+          const entry = row.marks?.[subjectId];
+          if (entry && entry.isEnrolled && entry.percentage !== 'N/A') {
+            visibleSum += entry.percentage;
+            visibleCount++;
+          }
+        }
+      });
+
+      const dynamicOverall = visibleCount > 0
+        ? parseFloat((visibleSum / visibleCount).toFixed(2))
+        : 'N/A';
+
+      html += `
+      <tr>
+        <td class="center">${idx + 1}</td>
+        <td>${row.studentId || '—'}</td>
+        <td>${row.fullName}</td>
+        <td class="center" style="text-transform: uppercase;">${row.language || 'N/A'}</td>`;
+
+      activeOrderedSubjectIds.forEach(subjectId => {
+        if (subjectId === 'language') {
+          const studentLangSub = languageSubjects.find(sub => {
+            const entry = row.marks?.[sub._id];
+            return entry && entry.isEnrolled;
+          });
+          if (!studentLangSub) {
+            html += `<td class="center">N/A</td><td class="center">N/A</td><td class="center">N/A</td>`;
+          } else {
+            const entry = row.marks?.[studentLangSub._id];
+            const subMax = entry ? (entry.maxMarks || studentLangSub.maxMarks) : studentLangSub.maxMarks;
+            if (entry) {
+              const scoreStr = entry.status === 'absent' ? 'AB' : entry.marksObtained;
+              const pctStr = entry.percentage === 'N/A' ? 'N/A' : `${entry.percentage}%`;
+              html += `<td class="center">${subMax}</td><td class="center">${scoreStr}</td><td class="center">${pctStr}</td>`;
+            } else {
+              html += `<td class="center">${subMax}</td><td class="center">0</td><td class="center">0%</td>`;
+            }
+          }
+        } else {
+          const sub = subjectsList.find(s => s._id === subjectId);
+          const entry = row.marks?.[subjectId];
+          const subMax = entry ? (entry.maxMarks || sub.maxMarks) : (sub ? sub.maxMarks : 50);
+          if (entry) {
+            if (!entry.isEnrolled) {
+              html += `<td class="center">N/A</td><td class="center">N/A</td><td class="center">N/A</td>`;
+            } else {
+              const scoreStr = entry.status === 'absent' ? 'AB' : entry.marksObtained;
+              const pctStr = entry.percentage === 'N/A' ? 'N/A' : `${entry.percentage}%`;
+              html += `<td class="center">${subMax}</td><td class="center">${scoreStr}</td><td class="center">${pctStr}</td>`;
+            }
+          } else {
+            html += `<td class="center">${subMax}</td><td class="center">0</td><td class="center">0%</td>`;
+          }
+        }
+      });
+
+      html += `
+        <td class="right" style="font-weight: bold;">${dynamicOverall === 'N/A' ? 'N/A' : dynamicOverall + '%'}</td>
+      </tr>`;
+    });
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `consolidated_ia_report_${hodIaConsolidatedData?.assessment?.title}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadHODDynamicSheetExcel = async () => {
+    if (!dynIaSelectedSemester || !dynIaSelectedBatch) {
+      toast.error("Please select Batch and Semester first.");
+      return;
+    }
+    
+    toast.info("Preparing multi-sheet Excel report...");
+    try {
+      const response = await api.get(
+        `/api/internal-assessments/hod/dynamic-sheet/export-all?batchId=${dynIaSelectedBatch._id}&semesterId=${dynIaSelectedSemester._id}`
+      );
+      
+      if (!response.data.success) {
+        toast.error("Failed to prepare export data.");
+        return;
+      }
+      
+      const { subjects, iaAssessments, subjectsData } = response.data.data;
+      
+      if (!subjects || subjects.length === 0) {
+        toast.error("No subjects found in this semester to export.");
+        return;
+      }
+      
+      const wb = XLSX.utils.book_new();
+
+      subjects.forEach(sub => {
+        const subData = subjectsData[sub._id];
+        if (!subData) return;
+        
+        let columnsList = [];
+        if (subData.savedSheet && subData.savedSheet.columns) {
+          columnsList = subData.savedSheet.columns;
+        } else {
+          columnsList = [
+            { id: "col_attendance", name: "Attendance %", type: "attendance", formula: "", sourceId: "" },
+            { id: "col_assignments", name: "Assignments %", type: "assignment", formula: "", sourceId: "" }
+          ];
+          (iaAssessments || []).forEach(ia => {
+            columnsList.push({
+              id: "col_ia_" + ia._id,
+              name: ia.title,
+              type: "ia",
+              formula: "",
+              sourceId: ia._id
+            });
+          });
+        }
+
+        const getVal = (studentId, col) => {
+          if (col.type === "attendance") {
+            return subData.attendance?.[studentId] || 0;
+          }
+          if (col.type === "subject_attendance") {
+            const subAttMap = subData.allSubjectAttendance?.[col.sourceId] || {};
+            return subAttMap[studentId] !== undefined ? subAttMap[studentId] : 0;
+          }
+          if (col.type === "assignment") {
+            return subData.assignments[studentId] || 0;
+          }
+          if (col.type === "ia") {
+            const iaMarks = subData.iaMarks[col.sourceId] || {};
+            return iaMarks[studentId] !== undefined ? iaMarks[studentId] : 0;
+          }
+          if (col.type === "custom") {
+            const customDataList = subData.savedSheet?.customData || [];
+            const entry = customDataList.find(d => d.student.toString() === studentId.toString());
+            if (entry && entry.values && entry.values[col.id] !== undefined) {
+              return entry.values[col.id];
+            }
+            return 0;
+          }
+          if (col.type === "formula") {
+            return evalFormula(studentId, col.formula);
+          }
+          return 0;
+        };
+
+        const evalFormula = (studentId, formulaStr) => {
+          if (!formulaStr) return 0;
+          let expression = formulaStr;
+          const sortedCols = [...columnsList].sort((a, b) => b.name.length - a.name.length);
+          for (const col of sortedCols) {
+            if (expression.includes(col.name)) {
+              const escapedName = col.name.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+              const regex = new RegExp(escapedName, 'g');
+              if (col.type === "formula" && col.formula.includes(col.name)) {
+                expression = expression.replace(regex, "0");
+              } else {
+                const val = getVal(studentId, col);
+                expression = expression.replace(regex, Number(val) || 0);
+              }
+            }
+          }
+          try {
+            const safeExpression = expression.replace(/[^0-9+\-*/().\s]/g, "");
+            if (!safeExpression) return 0;
+            const result = (0, eval)(safeExpression);
+            return isNaN(result) || !isFinite(result) ? 0 : parseFloat(result.toFixed(2));
+          } catch (err) {
+            return 0;
+          }
+        };
+
+        const sheetRows = [];
+        
+        sheetRows.push([`DYNAMIC CONSOLIDATION SHEET - ${sub.name.toUpperCase()} (${sub.subjectId})`]);
+        sheetRows.push([]);
+        
+        const headers = ["Sl. No.", "Admission Number", "Register Number", "Student Name"];
+        columnsList.forEach(col => {
+          headers.push(col.name);
+        });
+        sheetRows.push(headers);
+
+        const rosterList = subData.students || [];
+        rosterList.forEach((row, idx) => {
+          const rowData = [
+            idx + 1,
+            row.admissionNumber || 'N/A',
+            row.studentId,
+            row.fullName
+          ];
+          columnsList.forEach(col => {
+            const val = getVal(row._id, col);
+            let cleanVal = val;
+            if (val === null || val === undefined || isNaN(val)) {
+              cleanVal = 0;
+            }
+            rowData.push(cleanVal);
+          });
+          sheetRows.push(rowData);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+        const cleanSheetName = `${sub.subjectId}`.substring(0, 31).replace(/[:\\\/\?\*\[\]]/g, "_");
+        XLSX.utils.book_append_sheet(wb, ws, cleanSheetName);
+      });
+
+      XLSX.writeFile(wb, `dynamic_consolidation_sheets_semester.xlsx`);
+      
+      toast.success("Excel report exported successfully!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Excel export failed: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const copyHODConsolidatedIaToClipboard = () => {
+    if (!hodIaConsolidatedData || !hodIaConsolidatedData.data || hodIaConsolidatedData.data.length === 0) return;
+
+    const subjectsList = hodIaConsolidatedData?.subjects || [];
+    const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+    const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+    const showLanguageColumn = hodIaSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
+
+    const activeOrderedSubjectIds = [
+      ...regularSubjects.filter(sub => hodIaSelectedSubjectIds.includes(sub._id)).map(s => s._id),
+      ...(showLanguageColumn ? ["language"] : [])
+    ];
+    let rows = [];
+
+    // Header
+    let header = ["Sl. No.", "Register Number", "Student Name", "Language Choice"];
+    activeOrderedSubjectIds.forEach(subjectId => {
+      if (subjectId === 'language') {
+        header.push("Language (Max)", "Language (Scored)", "Language (%)");
+      } else {
+        const sub = subjectsList.find(s => s._id === subjectId);
+        header.push(`${sub ? sub.subjectId : ""} (Max)`, `${sub ? sub.subjectId : ""} (Scored)`, `${sub ? sub.subjectId : ""} (%)`);
+      }
+    });
+    header.push("Overall Percentage (%)");
+    rows.push(header.join("\t"));
+
+    // Data rows
+    getFilteredAndSortedIaData().forEach((row, idx) => {
+      let dataRow = [
+        (idx + 1).toString(),
+        row.studentId,
+        row.fullName,
+        (row.language || 'N/A').toUpperCase()
+      ];
+
+      activeOrderedSubjectIds.forEach(subjectId => {
+        if (subjectId === 'language') {
+          const studentLangSub = languageSubjects.find(sub => {
+            const entry = row.marks?.[sub._id];
+            return entry && entry.isEnrolled;
+          });
+          if (!studentLangSub) {
+            dataRow.push("N/A", "N/A", "N/A");
+          } else {
+            const entry = row.marks?.[studentLangSub._id];
+            const subMax = entry ? (entry.maxMarks || studentLangSub.maxMarks) : studentLangSub.maxMarks;
+            if (entry) {
+              const scoreStr = entry.status === 'absent' ? 'AB' : entry.marksObtained.toString();
+              const pctStr = entry.percentage === 'N/A' ? 'N/A' : `${entry.percentage}%`;
+              dataRow.push(subMax.toString(), scoreStr, pctStr);
+            } else {
+              dataRow.push(subMax.toString(), "0", "-");
+            }
+          }
+        } else {
+          const sub = subjectsList.find(s => s._id === subjectId);
+          const entry = row.marks?.[subjectId];
+          const subMax = entry ? (entry.maxMarks || sub.maxMarks) : (sub ? sub.maxMarks : 50);
+          if (entry) {
+            if (!entry.isEnrolled) {
+              dataRow.push("N/A", "N/A", "N/A");
+            } else {
+              const scoreStr = entry.status === 'absent' ? 'AB' : entry.marksObtained.toString();
+              const pctStr = entry.percentage === 'N/A' ? 'N/A' : `${entry.percentage}%`;
+              dataRow.push(subMax.toString(), scoreStr, pctStr);
+            }
+          } else {
+            dataRow.push(subMax.toString(), "0", "-");
+          }
+        }
+      });      const visibleMarks = visibleSubjects
+        .map(sub => row.marks?.[sub._id])
+        .filter(entry => entry && entry.isEnrolled && entry.percentage !== 'N/A');
+      
+      let visibleSum = 0;
+      visibleMarks.forEach(entry => {
+        visibleSum += entry.percentage;
+      });
+
+      const dynamicOverall = visibleMarks.length > 0
+        ? parseFloat((visibleSum / visibleMarks.length).toFixed(2))
+        : 'N/A';
+
+      dataRow.push(dynamicOverall === 'N/A' ? 'N/A' : `${dynamicOverall}%`);
+      rows.push(dataRow.join("\t"));
+    });    navigator.clipboard.writeText(rows.join("\n"))
+      .then(() => {
+        toast.success("Consolidated IA marks copied to clipboard!");
+      })
+      .catch(err => {
+        console.error("Failed to copy consolidated IA marks", err);
+        toast.error("Failed to copy table data to clipboard.");
+      });
+  };
+
+  const fetchFacultyIaList = async () => {
+    try {
+      const response = await api.get("/api/internal-assessments/faculty/list");
+      if (response.data.success) {
+        setFacultyIaAssessmentsList(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch faculty IA list", err);
+    }
+  };
+
+  const fetchFacultyIaMarksheet = async (iaId, subId, secId) => {
+    if (!iaId || !subId) return;
+    setFacultyIaMarksheetLoading(true);
+    try {
+      const response = await api.get(
+        `/api/internal-assessments/faculty/marks?internalAssessmentId=${iaId}&subjectId=${subId}&sectionId=${secId || "all"}`
+      );
+      if (response.data.success) {
+        setFacultyIaMarksheet(response.data.data.marks);
+        setFacultyIaMaxMarks(response.data.data.maxMarks || 50);
+      }
+    } catch (err) {
+      console.error("Failed to fetch marksheet", err);
+      toast.error("Failed to load student marksheet.");
+    } finally {
+      setFacultyIaMarksheetLoading(false);
+    }
+  };
+
+  const submitFacultyIaMarks = async () => {
+    if (!facultyIaSelectedAssessmentId || !facultyIaSelectedSubjectId) return;
+    setFacultyIaSaving(true);
+    try {
+      const response = await api.post("/api/internal-assessments/faculty/marks", {
+        internalAssessmentId: facultyIaSelectedAssessmentId,
+        subjectId: facultyIaSelectedSubjectId,
+        sectionId: facultyIaSelectedSectionId,
+        maxMarks: Number(facultyIaMaxMarks),
+        marks: facultyIaMarksheet.map(item => ({
+          studentId: item.student._id,
+          marksObtained: item.status === "absent" ? 0 : Number(item.marksObtained),
+          status: item.status,
+        })),
+      });
+
+      if (response.data.success) {
+        toast.success("Marks saved successfully!");
+        fetchFacultyIaMarksheet(
+          facultyIaSelectedAssessmentId,
+          facultyIaSelectedSubjectId,
+          facultyIaSelectedSectionId
+        );
+      }
+    } catch (err) {
+      console.error("Failed to submit marks", err);
+      toast.error(err.response?.data?.message || "Failed to save marks.");
+    } finally {
+      setFacultyIaSaving(false);
+    }
+  };
+
+  // Fetch semesters for dynamic sheets batch
+  const fetchDynSemesters = async (batchId) => {
+    try {
+      const response = await api.get(`/api/batches/${batchId}/semesters`);
+      if (response.data.success) {
+        setDynIaSemesters(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch semesters", err);
+    }
+  };
+
+  // Fetch sections for dynamic sheets semester
+  const fetchDynSections = async (semesterId) => {
+    try {
+      const response = await api.get(`/api/batches/semesters/${semesterId}/sections`);
+      if (response.data.success) {
+        setDynIaSections(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sections", err);
+    }
+  };
+
+  // Fetch subjects for dynamic sheets semester
+  const fetchDynSubjects = async (semesterId) => {
+    try {
+      const response = await api.get(`/api/subjects/semesters/${semesterId}`);
+      if (response.data.success) {
+        setDynIaSubjects(response.data.data);
+        if (response.data.data.length > 0) {
+          setDynIaActiveSubject(response.data.data[0]);
+        } else {
+          setDynIaActiveSubject(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch subjects", err);
+    }
+  };
+
+  // Load Baseline Data & saved sheet config
+  const fetchDynIaSheetData = async (batchId, semesterId, subjectId) => {
+    if (!batchId || !semesterId || !subjectId) return;
+    setDynIaSheetLoading(true);
+    setDynIaSheetData(null);
+    try {
+      const response = await api.get(
+        `/api/internal-assessments/hod/dynamic-sheet?batchId=${batchId}&semesterId=${semesterId}&subjectId=${subjectId}`
+      );
+      if (response.data.success) {
+        const payload = response.data.data;
+        setDynIaSheetData(payload);
+
+        // If sheet config was saved previously, restore it
+        if (payload.savedSheet) {
+          setDynIaSheetColumns(payload.savedSheet.columns || []);
+          setDynIaSheetCustomData(payload.savedSheet.customData || []);
+        } else {
+          // Initialize with default standard columns
+          const initialCols = [
+            { id: "col_attendance", name: "Attendance %", type: "attendance", formula: "", sourceId: "" },
+            { id: "col_assignments", name: "Assignments %", type: "assignment", formula: "", sourceId: "" }
+          ];
+          // Auto-add available IA assessments
+          (payload.iaAssessments || []).forEach((ia, idx) => {
+            initialCols.push({
+              id: `col_ia_${ia._id}`,
+              name: `${ia.title} (Max: ${payload.iaMaxMarks[ia._id] || 50})`,
+              type: "ia",
+              formula: "",
+              sourceId: ia._id
+            });
+          });
+          setDynIaSheetColumns(initialCols);
+          setDynIaSheetCustomData([]);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch dynamic sheet baseline data", err);
+      toast.error("Failed to load baseline metrics registry.");
+    } finally {
+      setDynIaSheetLoading(false);
+    }
+  };
+
+  // Save Config and Custom manual cells values to Database
+  const saveDynIaSheetConfig = async () => {
+    if (!dynIaSelectedBatch || !dynIaSelectedSemester || !dynIaActiveSubject) return;
+    setDynIaSaving(true);
+    try {
+      const response = await api.post("/api/internal-assessments/hod/dynamic-sheet", {
+        batchId: dynIaSelectedBatch._id,
+        semesterId: dynIaSelectedSemester._id,
+        subjectId: dynIaActiveSubject._id,
+        columns: dynIaSheetColumns,
+        customData: dynIaSheetCustomData
+      });
+
+      if (response.data.success) {
+        toast.success("Dynamic consolidation sheet configuration saved successfully!");
+        fetchDynIaSheetData(
+          dynIaSelectedBatch._id,
+          dynIaSelectedSemester._id,
+          dynIaActiveSubject._id
+        );
+      }
+    } catch (err) {
+      console.error("Failed to save dynamic sheet", err);
+      toast.error(err.response?.data?.message || "Failed to persist configuration.");
+    } finally {
+      setDynIaSaving(false);
+    }
+  };
+
+  // Selection triggers
+  useEffect(() => {
+    if (dynIaSelectedBatch) {
+      fetchDynSemesters(dynIaSelectedBatch._id);
+      setDynIaSelectedSemester(null);
+      setDynIaSections([]);
+      setDynIaSubjects([]);
+      setDynIaActiveSubject(null);
+      setDynIaSheetData(null);
+    }
+  }, [dynIaSelectedBatch]);
+
+  useEffect(() => {
+    if (dynIaSelectedSemester) {
+      fetchDynSubjects(dynIaSelectedSemester._id);
+      fetchDynSections(dynIaSelectedSemester._id);
+    }
+  }, [dynIaSelectedSemester]);
+
+  useEffect(() => {
+    if (dynIaSelectedBatch && dynIaSelectedSemester && dynIaActiveSubject) {
+      fetchDynIaSheetData(dynIaSelectedBatch._id, dynIaSelectedSemester._id, dynIaActiveSubject._id);
+    }
+  }, [dynIaSelectedBatch, dynIaSelectedSemester, dynIaActiveSubject]);
+
+  // HOD IA creation side-effects
+  useEffect(() => {
+    if (hodIaSelectedBatch) {
+      fetchHODSemesters(hodIaSelectedBatch._id);
+      setHodIaSelectedSemester(null);
+      setHodIaList([]);
+    }
+  }, [hodIaSelectedBatch]);
+
+  useEffect(() => {
+    if (hodIaSelectedSemester) {
+      fetchHODInternalAssessments(hodIaSelectedSemester._id);
+    }
+  }, [hodIaSelectedSemester]);
+
+  // HOD IA consolidated side-effects
+  useEffect(() => {
+    if (hodIaConsolidatedSelectedBatch) {
+      fetchHODSemesters(hodIaConsolidatedSelectedBatch._id);
+      setHodIaConsolidatedSelectedSemester(null);
+      setHodIaConsolidatedSelectedSection("all");
+      setHodIaConsolidatedSelectedAssessment(null);
+      setHodIaConsolidatedData(null);
+    }
+  }, [hodIaConsolidatedSelectedBatch]);
+
+  useEffect(() => {
+    if (hodIaConsolidatedSelectedSemester) {
+      fetchHODSections(hodIaConsolidatedSelectedSemester._id);
+      fetchHODInternalAssessments(hodIaConsolidatedSelectedSemester._id);
+      setHodIaConsolidatedSelectedSection("all");
+      setHodIaConsolidatedSelectedAssessment(null);
+      setHodIaConsolidatedData(null);
+    }
+  }, [hodIaConsolidatedSelectedSemester]);
+
+  useEffect(() => {
+    if (hodIaConsolidatedSelectedSemester && hodIaConsolidatedSelectedAssessment) {
+      fetchHODConsolidatedIA(
+        hodIaConsolidatedSelectedSemester._id,
+        hodIaConsolidatedSelectedSection,
+        hodIaConsolidatedSelectedAssessment._id
+      );
+    }
+  }, [hodIaConsolidatedSelectedSemester, hodIaConsolidatedSelectedSection, hodIaConsolidatedSelectedAssessment]);
+
+  // Faculty IA side-effects
+  useEffect(() => {
+    if (user && user.role === "Faculty") {
+      fetchFacultyIaList();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (facultyIaSelectedAssessmentId && facultyIaSelectedSubjectId) {
+      fetchFacultyIaMarksheet(
+        facultyIaSelectedAssessmentId,
+        facultyIaSelectedSubjectId,
+        facultyIaSelectedSectionId
+      );
+    }
+  }, [facultyIaSelectedAssessmentId, facultyIaSelectedSubjectId, facultyIaSelectedSectionId]);
 
   const getStats = () => {
     const activeUsersCount = users.length > 0 ? users.filter((u) => u.status === "active").length : 1;
@@ -2102,7 +3736,8 @@ export const DashboardHome = () => {
                         <Input
                           id="password"
                           type="password"
-                          placeholder="••••••••"
+                          placeholder="
+"
                           className="border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
                           {...registerUser("password")}
                           disabled={isSubmitting}
@@ -2355,7 +3990,8 @@ export const DashboardHome = () => {
                       Select batch and semester to create subjects and map them to faculties per section.
                     </CardDescription>
                     <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded text-[11px] text-amber-700 dark:text-amber-400 mt-2">
-                      ⚠️ <strong>Note:</strong> Language subjects (Kannada, Hindi, Malayalam) should be registered first before configuring regular subjects.
+                      
+ <strong>Note:</strong> Language subjects (Kannada, Hindi, Malayalam) should be registered first before configuring regular subjects.
                     </div>
                   </CardHeader>
                   <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -2453,7 +4089,7 @@ export const DashboardHome = () => {
                         <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg">
                           <table className="w-full text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
+                              <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
                                 <th className="py-2 px-3">Code</th>
                                 <th className="py-2 px-3">Subject Name</th>
                                 <th className="py-2 px-3">Type</th>
@@ -2463,7 +4099,7 @@ export const DashboardHome = () => {
                             <tbody>
                               {subjects.length === 0 ? (
                                 <tr>
-                                  <td colSpan={4} className="py-4 text-center text-zinc-500 italic">No subjects created yet.</td>
+                                  <td colSpan={5} className="py-4 text-center text-zinc-500 italic">No subjects created yet.</td>
                                 </tr>
                               ) : (
                                 subjects.map(sub => (
@@ -2473,7 +4109,19 @@ export const DashboardHome = () => {
                                     <td className="py-2 px-3 font-semibold uppercase text-[10px] text-zinc-500">
                                       {sub.subjectType === 'language' ? 'Language' : 'Regular'}
                                     </td>
-                                    <td className="py-2 px-3 text-right">
+                                    <td className="py-2 px-3 text-right space-x-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingSubject(sub);
+                                          setNewSubjectId(sub.subjectId);
+                                          setNewSubjectName(sub.name);
+                                          setNewSubjectType(sub.subjectType);
+                                        }}
+                                        className="text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-850 p-1 rounded"
+                                      >
+                                        <Edit className="h-3.5 w-3.5" />
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => onDeleteSubject(sub._id)}
@@ -2493,10 +4141,10 @@ export const DashboardHome = () => {
 
                     {/* Right Column: Faculty Allocation */}
                     <div className="lg:col-span-7 space-y-6">
-                      <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950">
+                      <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
                         <CardHeader>
-                          <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">Map Faculty to Subject</CardTitle>
-                          <CardDescription className="text-[10px] text-zinc-550 text-zinc-500">Allocate subjects to respective faculty members per section (session)</CardDescription>
+                          <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">{editingAllocation ? "Edit Faculty Allocation" : "Map Faculty to Subject"}</CardTitle>
+                          <CardDescription className="text-[10px] text-zinc-500 text-zinc-500">Allocate subjects to respective faculty members per section (session)</CardDescription>
                         </CardHeader>
                         <CardContent>                          <form 
                             onSubmit={onCreateSubjectAllocation} 
@@ -2558,7 +4206,7 @@ export const DashboardHome = () => {
                         <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg">
                           <table className="w-full text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
+                              <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
                                 <th className="py-2 px-3">Subject</th>
                                 <th className="py-2 px-3">Section</th>
                                 <th className="py-2 px-3">Faculty Member</th>
@@ -2568,7 +4216,7 @@ export const DashboardHome = () => {
                             <tbody>
                               {subjectAllocations.length === 0 ? (
                                 <tr>
-                                  <td colSpan={4} className="py-4 text-center text-zinc-505 italic">No subjects mapped to faculty yet.</td>
+                                  <td colSpan={5} className="py-4 text-center text-zinc-500 italic">No subjects mapped to faculty yet.</td>
                                 </tr>
                               ) : (
                                 subjectAllocations.map(alloc => (
@@ -2586,7 +4234,19 @@ export const DashboardHome = () => {
                                       <div className="font-medium text-zinc-900 dark:text-white">{alloc.faculty?.fullName}</div>
                                       <div className="text-[10px] text-zinc-450 dark:text-zinc-500">{alloc.faculty?.email}</div>
                                     </td>
-                                    <td className="py-2 px-3 text-right">
+                                    <td className="py-2 px-3 text-right space-x-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingAllocation(alloc);
+                                          setSelectedAllocSubjectId(alloc.subject?._id || "");
+                                          setSelectedAllocSectionId(alloc.section?._id || "");
+                                          setSelectedAllocFacultyId(alloc.faculty?._id || "");
+                                        }}
+                                        className="text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-850 p-1 rounded"
+                                      >
+                                        <Edit className="h-3.5 w-3.5" />
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => onDeleteSubjectAllocation(alloc._id)}
@@ -2617,11 +4277,39 @@ export const DashboardHome = () => {
 
         const showLanguageColumn = hodSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
         const selectedRegularSubjects = regularSubjects.filter(s => hodSelectedSubjectIds.includes(s._id));
-        const totalColsCount = 4 + hodOrderedSubjectIds.length * 3 + 1;
+        const totalColsCount = 5 + hodOrderedSubjectIds.length * 3 + 1;
 
         return (
           <div className="space-y-6">
-            <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+            {/* Tab Header Selector */}
+            <div className="flex border-b border-zinc-200 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setHodAttendanceSubTab("consolidated")}
+                className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
+                  hodAttendanceSubTab === "consolidated"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-zinc-500 dark:text-zinc-400"
+                }`}
+              >
+                Consolidated Ledger
+              </button>
+              <button
+                type="button"
+                onClick={() => setHodAttendanceSubTab("daily")}
+                className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
+                  hodAttendanceSubTab === "daily"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-zinc-500 dark:text-zinc-400"
+                }`}
+              >
+                Daily Attendance Editor
+              </button>
+            </div>
+
+            {hodAttendanceSubTab === "consolidated" ? (
+              <>
+                <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
               <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 pb-4 border-b border-zinc-100 dark:border-zinc-900">
                 <div>
                   <CardTitle className="text-zinc-900 dark:text-white text-base flex items-center space-x-2">
@@ -2633,21 +4321,33 @@ export const DashboardHome = () => {
                   </CardDescription>
                 </div>
                 {hasRecords && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadHODConsolidatedExcel}
-                    className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold"
-                  >
-                <FileSpreadsheet className="h-4 w-4" />
-                    <span>Export Excel Report</span>
-                  </Button>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={copyHODConsolidatedAttendanceToClipboard}
+                      className="text-xs h-8 px-3 border-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300 flex items-center space-x-1 font-semibold"
+                    >
+                      <Copy className="h-4 w-4" />
+                      <span>Copy Table Data</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadHODConsolidatedExcel}
+                      className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span>Export Excel Report</span>
+                    </Button>
+                  </div>
                 )}
               </CardHeader>
               <CardContent className="pt-4">
                 {/* Selectors Grid */}
-                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4 text-xs pb-2">
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 text-xs pb-2">
                   <div className="space-y-1">
                     <Label className="text-zinc-700 dark:text-zinc-300">Choose Batch *</Label>
                     <select
@@ -2722,7 +4422,7 @@ export const DashboardHome = () => {
                             className="fixed inset-0 z-40" 
                             onClick={() => setIsSubjectDropdownOpen(false)}
                           />
-                          <div className="absolute right-0 left-0 mt-1 z-50 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 p-2 shadow-md max-h-60 overflow-y-auto space-y-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                          <div className="absolute right-0 left-0 mt-1 z-50 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 shadow-md max-h-60 overflow-y-auto space-y-1 animate-in fade-in slide-in-from-top-1 duration-100">
                             <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 dark:border-zinc-900 text-[10px] text-zinc-500">
                               <button
                                 type="button"
@@ -2786,12 +4486,34 @@ export const DashboardHome = () => {
                       )}
                     </div>
                   </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">From Date</Label>
+                    <Input
+                      type="date"
+                      disabled={!hodSelectedSemester}
+                      value={hodConsolidatedStartDate}
+                      onChange={(e) => setHodConsolidatedStartDate(e.target.value)}
+                      className="h-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">To Date</Label>
+                    <Input
+                      type="date"
+                      disabled={!hodSelectedSemester}
+                      value={hodConsolidatedEndDate}
+                      onChange={(e) => setHodConsolidatedEndDate(e.target.value)}
+                      className="h-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                    />
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
             {!hodSelectedSemester ? (
-              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 text-zinc-505 italic text-xs">
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
                 Please select Batch and Semester from dropdowns to display consolidated records.
               </div>
             ) : hodConsolidatedLoading ? (
@@ -2800,7 +4522,7 @@ export const DashboardHome = () => {
                 <span className="text-zinc-500 text-xs font-semibold animate-pulse">Fetching consolidated records...</span>
               </div>
             ) : !hasRecords ? (
-              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-550 italic text-xs">
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
                 No attendance logs or student rosters found matching these criteria.
               </div>
             ) : (
@@ -2833,11 +4555,12 @@ export const DashboardHome = () => {
                 </div>
 
                 {/* Table View */}
-                <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950">
+                <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
+                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
                         <th rowSpan={2} className="py-2.5 px-3 text-center w-12 border-r border-zinc-200 dark:border-zinc-850">Sl. No.</th>
+                        <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Admission Number</th>
                         <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Register Number</th>
                         <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Student Name</th>
                         <th rowSpan={2} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850">Language Choice</th>
@@ -2860,8 +4583,8 @@ export const DashboardHome = () => {
                                   isDragOver ? 'bg-zinc-100 dark:bg-zinc-800 border-l-2 border-l-primary' : ''
                                 } ${isDragging ? 'opacity-40 scale-95' : ''}`}
                               >
-                                <div className="truncate max-w-[120px] mx-auto font-semibold">Language</div>
-                                <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans max-w-[120px] truncate mx-auto mt-0.5" title="Language Elective Faculty">
+                                <div className="break-words whitespace-normal mx-auto font-semibold">Language</div>
+                                <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans break-words whitespace-normal mx-auto mt-0.5" title="Language Elective Faculty">
                                   Language Staff
                                 </div>
                               </th>
@@ -2884,8 +4607,8 @@ export const DashboardHome = () => {
                                 isDragOver ? 'bg-zinc-100 dark:bg-zinc-800 border-l-2 border-l-primary' : ''
                               } ${isDragging ? 'opacity-40 scale-95' : ''}`}
                             >
-                              <div className="truncate max-w-[120px] mx-auto">{sub.subjectId}</div>
-                              <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans max-w-[120px] truncate mx-auto mt-0.5" title={sub.facultyName}>
+                              <div className="break-words whitespace-normal mx-auto">{sub.subjectId}</div>
+                              <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans break-words whitespace-normal mx-auto mt-0.5" title={sub.facultyName}>
                                 {sub.facultyName}
                               </div>
                             </th>
@@ -2894,7 +4617,7 @@ export const DashboardHome = () => {
                         
                         <th rowSpan={2} className="py-2.5 px-3 text-right">Overall Attendance</th>
                       </tr>
-                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/20 dark:bg-zinc-900/10 text-zinc-505 dark:text-zinc-400 font-semibold text-[10px]">
+                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/20 dark:bg-zinc-900/10 text-zinc-500 dark:text-zinc-400 font-semibold text-[10px]">
                         {hodOrderedSubjectIds.map((subjectId) => (
                           <React.Fragment key={`${subjectId}-subheaders`}>
                             <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10">CT</th>
@@ -2961,7 +4684,8 @@ export const DashboardHome = () => {
                           return (
                             <tr key={row._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
                               <td className="py-2.5 px-3 text-center font-semibold text-zinc-400 border-r border-zinc-100 dark:border-zinc-900">{idx + 1}</td>
-                              <td className="py-2.5 px-3 font-mono font-bold text-zinc-900 dark:text-white border-r border-zinc-100 dark:border-zinc-900">{row.studentId}</td>
+                              <td className="py-2.5 px-3 font-mono font-semibold text-zinc-500 border-r border-zinc-100 dark:border-zinc-900">{row.admissionNumber || 'N/A'}</td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-zinc-900 dark:text-white border-r border-zinc-100 dark:border-zinc-900">{row.studentId || '—'}</td>
                               <td className="py-2.5 px-3 font-medium border-r border-zinc-100 dark:border-zinc-900">{row.fullName}</td>
                               <td className="py-2.5 px-3 text-center uppercase text-[10px] font-bold text-zinc-500 border-r border-zinc-100 dark:border-zinc-900">{row.language || 'N/A'}</td>
                               
@@ -3031,6 +4755,648 @@ export const DashboardHome = () => {
                 </div>
               </div>
             )}
+              </>
+            ) : (
+              <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
+                <CardHeader className="pb-4 border-b border-zinc-100 dark:border-zinc-900">
+                  <div>
+                    <CardTitle className="text-zinc-900 dark:text-white text-base flex items-center space-x-2">
+                      <CalendarCheck className="h-5 w-5 text-zinc-400" />
+                      <span>Daily Attendance Editor</span>
+                    </CardTitle>
+                    <CardDescription className="text-zinc-500 dark:text-zinc-400 text-xs mt-1">
+                      Directly view and edit daily attendance registers for any subject and date.
+                    </CardDescription>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-4">
+                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-5 text-xs">
+                    <div className="space-y-1">
+                      <Label className="text-zinc-755 dark:text-zinc-300">Choose Batch *</Label>
+                      <select
+                        className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                        value={hodSelectedBatch?._id || ""}
+                        onChange={(e) => {
+                          const b = batches.find(x => x._id === e.target.value);
+                          setHodSelectedBatch(b || null);
+                        }}
+                      >
+                        <option value="">-- Select Batch --</option>
+                        {batches.map(b => (
+                          <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-zinc-755 dark:text-zinc-300">Choose Semester *</Label>
+                      <select
+                        className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                        disabled={!hodSelectedBatch}
+                        value={hodSelectedSemester?._id || ""}
+                        onChange={(e) => {
+                          const s = (hodSemesters || []).find(x => x._id === e.target.value);
+                          setHodSelectedSemester(s || null);
+                        }}
+                      >
+                        <option value="">-- Select Semester --</option>
+                        {(hodSemesters || []).map(s => (
+                          <option key={s._id} value={s._id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-zinc-755 dark:text-zinc-300">Class / Section</Label>
+                      <select
+                        className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                        disabled={!hodSelectedSemester}
+                        value={hodSelectedSection}
+                        onChange={(e) => setHodSelectedSection(e.target.value)}
+                      >
+                        <option value="all">Semester-Wide</option>
+                        {(hodSections || []).map(sec => (
+                          <option key={sec._id} value={sec._id}>{sec.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-zinc-755 dark:text-zinc-300">Select Subject *</Label>
+                      <select
+                        className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                        disabled={!hodSelectedSemester}
+                        value={hodDailySelectedSubjectId}
+                        onChange={(e) => setHodDailySelectedSubjectId(e.target.value)}
+                      >
+                        <option value="">-- Select Subject --</option>
+                        {hodSubjects.map(sub => (
+                          <option key={sub._id} value={sub._id}>{sub.name} ({sub.subjectId})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-zinc-755 dark:text-zinc-300">Attendance Date *</Label>
+                      <Input
+                        type="date"
+                        value={hodDailySelectedDate}
+                        onChange={(e) => setHodDailySelectedDate(e.target.value)}
+                        className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2"
+                      />
+                    </div>
+                  </div>
+
+                  {!hodSelectedSemester || !hodDailySelectedSubjectId ? (
+                    <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/10 text-zinc-500 italic text-xs">
+                      Please select Batch, Semester, and Subject to load daily attendance registry.
+                    </div>
+                  ) : hodDailyLoading ? (
+                    <div className="flex flex-col items-center justify-center p-24 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/10 space-y-4">
+                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 dark:border-zinc-850 border-t-zinc-850 dark:border-t-zinc-205" />
+                      <span className="text-zinc-500 text-xs font-semibold animate-pulse">Loading daily attendance roster...</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-zinc-50/50 dark:bg-zinc-900/10 p-3 rounded-lg border border-zinc-200 dark:border-zinc-850">
+                        <div className="text-xs space-y-0.5">
+                          <div className="font-semibold text-zinc-700 dark:text-zinc-300">
+                            Status: <span className={hodDailyIsMarked ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-amber-600 dark:text-amber-400 font-bold"}>
+                              {hodDailyIsMarked ? "Attendance Marked" : "Not Marked"}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
+                            {hodDailyIsMarked ? `Originally marked by: ${hodDailyFacultyName}` : `Assigned Faculty: ${hodDailyFacultyName}`}
+                          </div>
+                        </div>
+                        <div className="flex space-x-2 mt-2 sm:mt-0">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setHodDailyStudents(prev => prev.map(s => ({ ...s, status: "present" })));
+                            }}
+                            className="h-7 text-[10px] border-zinc-200 hover:bg-zinc-100"
+                          >
+                            Mark All Present
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setHodDailyStudents(prev => prev.map(s => ({ ...s, status: "absent" })));
+                            }}
+                            className="h-7 text-[10px] border-zinc-200 hover:bg-zinc-100"
+                          >
+                            Mark All Absent
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
+                              <th className="py-2.5 px-3 text-center w-12 border-r border-zinc-200 dark:border-zinc-850">Sl. No.</th>
+                              <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Admission No</th>
+                              <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Register Number</th>
+                              <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Student Name</th>
+                              <th className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 w-28">Attendance Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {hodDailyStudents.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="py-8 text-center text-zinc-500 italic">No students registered in this section/language match.</td>
+                              </tr>
+                            ) : (
+                              hodDailyStudents.map((row, idx) => (
+                                <tr key={row._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
+                                  <td className="py-2.5 px-3 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400 font-medium">{idx + 1}</td>
+                                  <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold text-zinc-500">{row.admissionNumber || 'N/A'}</td>
+                                  <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold">{row.studentId || '—'}</td>
+                                  <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-medium">{row.fullName}</td>
+                                  <td className="py-2 px-3 text-center flex items-center justify-center space-x-1.5 h-10">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...hodDailyStudents];
+                                        updated[idx].status = "present";
+                                        setHodDailyStudents(updated);
+                                      }}
+                                      className={`px-3 py-1 rounded text-[10px] font-bold border transition-all ${
+                                        row.status === "present"
+                                          ? "bg-emerald-500 border-emerald-500 text-white shadow-sm"
+                                          : "bg-white dark:bg-zinc-900 border-zinc-200 text-zinc-650 hover:bg-zinc-55"
+                                      }`}
+                                    >
+                                      Present
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...hodDailyStudents];
+                                        updated[idx].status = "absent";
+                                        setHodDailyStudents(updated);
+                                      }}
+                                      className={`px-3 py-1 rounded text-[10px] font-bold border transition-all ${
+                                        row.status === "absent"
+                                          ? "bg-red-500 border-red-500 text-white shadow-sm"
+                                          : "bg-white dark:bg-zinc-900 border-zinc-200 text-zinc-650 hover:bg-zinc-55"
+                                      }`}
+                                    >
+                                      Absent
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="flex justify-end pt-2">
+                        <Button
+                          type="button"
+                          onClick={onSaveHODDailyAttendance}
+                          disabled={hodDailyStudents.length === 0}
+                          className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-9 font-semibold"
+                        >
+                          Save Attendance Register
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        );
+      } else if (window.location.pathname.endsWith("/assignments")) {
+        const filteredAssignData = getFilteredAndSortedAssignData();
+        const hasRecords = hodAssignConsolidatedData && hodAssignConsolidatedData.data && hodAssignConsolidatedData.data.length > 0;
+        
+        const subjectsList = hodAssignConsolidatedData?.subjects || [];
+        const regularSubjects = subjectsList.filter(s => s.subjectType !== 'language');
+        const languageSubjects = subjectsList.filter(s => s.subjectType === 'language');
+
+        const showLanguageColumn = hodAssignSelectedSubjectIds.includes("language") && languageSubjects.length > 0;
+
+        // Construct ordered subject IDs list matching selections
+        const activeOrderedSubjectIds = hodAssignOrderedSubjectIds.filter(id => 
+          (id === 'language' && showLanguageColumn) || 
+          (id !== 'language' && hodAssignSelectedSubjectIds.includes(id))
+        );
+
+        const totalColsCount = 5 + activeOrderedSubjectIds.length * 3 + 1;
+
+        return (
+          <div className="space-y-6">
+            <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 pb-4 border-b border-zinc-100 dark:border-zinc-900">
+                <div>
+                  <CardTitle className="text-zinc-900 dark:text-white text-base flex items-center space-x-2">
+                    <CheckCircle className="h-5 w-5 text-zinc-400" />
+                    <span>Consolidated Assignment Ledger</span>
+                  </CardTitle>
+                  <CardDescription className="text-zinc-500 text-xs mt-1">
+                    Select a batch, semester, and subjects to inspect assignment submission metrics.
+                  </CardDescription>
+                </div>
+                {hasRecords && (
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={copyHODConsolidatedAssignmentsToClipboard}
+                      className="text-xs h-8 px-3 border-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300 flex items-center space-x-1 font-semibold"
+                    >
+                      <Copy className="h-4 w-4" />
+                      <span>Copy Table Data</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadHODConsolidatedAssignmentsExcel}
+                      className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span>Export Excel Report</span>
+                    </Button>
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent className="pt-4">
+                {/* Selectors Grid */}
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4 text-xs pb-2">
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Choose Batch *</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      value={hodAssignSelectedBatch?._id || ""}
+                      onChange={(e) => {
+                        const b = batches.find(x => x._id === e.target.value);
+                        setHodAssignSelectedBatch(b || null);
+                      }}
+                    >
+                      <option value="">-- Select Batch --</option>
+                      {batches.map(b => (
+                        <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Choose Semester *</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      disabled={!hodAssignSelectedBatch}
+                      value={hodAssignSelectedSemester?._id || ""}
+                      onChange={(e) => {
+                        const s = (hodSemesters || []).find(x => x._id === e.target.value);
+                        setHodAssignSelectedSemester(s || null);
+                      }}
+                    >
+                      <option value="">-- Select Semester --</option>
+                      {(hodSemesters || []).map(s => (
+                        <option key={s._id} value={s._id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Class / Section</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      disabled={!hodAssignSelectedSemester}
+                      value={hodAssignSelectedSection}
+                      onChange={(e) => setHodAssignSelectedSection(e.target.value)}
+                    >
+                      <option value="all">Semester-Wide (All Sections)</option>
+                      {(hodSections || []).map(sec => (
+                        <option key={sec._id} value={sec._id}>{sec.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 relative">
+                    <Label className="text-zinc-700 dark:text-zinc-300">Course Subjects</Label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        disabled={!hodAssignSelectedSemester}
+                        onClick={() => setIsAssignSubjectDropdownOpen(!isAssignSubjectDropdownOpen)}
+                        className="flex h-8 w-full items-center justify-between rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-50 text-left"
+                      >
+                        <span className="truncate">
+                          {hodAssignSelectedSubjectIds.length === 0
+                            ? "No subjects selected"
+                            : hodAssignSelectedSubjectIds.length === (hodSubjects.filter(s => s.subjectType !== 'language').length + (hodSubjects.some(s => s.subjectType === 'language') ? 1 : 0))
+                            ? "All Subjects Selected"
+                            : `${hodAssignSelectedSubjectIds.length} Subjects Selected`}
+                        </span>
+                        <ChevronDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
+                      </button>
+
+                      {isAssignSubjectDropdownOpen && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setIsAssignSubjectDropdownOpen(false)}
+                          />
+                          <div className="absolute right-0 left-0 mt-1 z-50 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 shadow-md max-h-60 overflow-y-auto space-y-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                            <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 dark:border-zinc-900 text-[10px] text-zinc-500">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const regularIds = hodSubjects.filter(s => s.subjectType !== 'language').map(s => s._id);
+                                  const hasLang = hodSubjects.some(s => s.subjectType === 'language');
+                                  setHodAssignSelectedSubjectIds(hasLang ? [...regularIds, "language"] : regularIds);
+                                }}
+                                className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
+                              >
+                                Select All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setHodAssignSelectedSubjectIds([])}
+                                className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
+                              >
+                                Deselect All
+                              </button>
+                            </div>
+                            
+                            {/* Combined Language Option */}
+                            {hodSubjects.some(s => s.subjectType === 'language') && (
+                              <label className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300 font-semibold">
+                                <input
+                                  type="checkbox"
+                                  checked={hodAssignSelectedSubjectIds.includes("language")}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setHodAssignSelectedSubjectIds(prev => [...prev, "language"]);
+                                    } else {
+                                      setHodAssignSelectedSubjectIds(prev => prev.filter(x => x !== "language"));
+                                    }
+                                  }}
+                                  className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                                />
+                                <span>Language</span>
+                              </label>
+                            )}
+
+                            {/* Regular Subjects */}
+                            {hodSubjects.filter(s => s.subjectType !== 'language').map(sub => (
+                              <label key={sub._id} className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300">
+                                <input
+                                  type="checkbox"
+                                  checked={hodAssignSelectedSubjectIds.includes(sub._id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setHodAssignSelectedSubjectIds(prev => [...prev, sub._id]);
+                                    } else {
+                                      setHodAssignSelectedSubjectIds(prev => prev.filter(x => x !== sub._id));
+                                    }
+                                  }}
+                                  className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                                />
+                                <span>{sub.subjectId} - {sub.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {!hodAssignSelectedSemester ? (
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                Please select Batch and Semester from dropdowns to display consolidated records.
+              </div>
+            ) : hodAssignConsolidatedLoading ? (
+              <div className="flex flex-col items-center justify-center p-24 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 space-y-4">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 dark:border-zinc-850 border-t-zinc-850 dark:border-t-zinc-200" />
+                <span className="text-zinc-500 text-xs font-semibold animate-pulse">Fetching consolidated records...</span>
+              </div>
+            ) : !hasRecords ? (
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                No assignments or student rosters found matching these criteria.
+              </div>
+            ) : (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                {/* Search and Sort controls */}
+                <div className="flex flex-col sm:flex-row gap-2 bg-zinc-50/50 dark:bg-zinc-900/10 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                    <Input
+                      type="text"
+                      placeholder="Search student name or register number..."
+                      value={hodAssignSearchQuery}
+                      onChange={(e) => setHodAssignSearchQuery(e.target.value)}
+                      className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                      value={hodAssignSortCriteria}
+                      onChange={(e) => setHodAssignSortCriteria(e.target.value)}
+                    >
+                      <option value="rollAsc">Register No (Asc)</option>
+                      <option value="rollDesc">Register No (Desc)</option>
+                      <option value="nameAsc">Name (A-Z)</option>
+                      <option value="pctAsc">Overall Pct (Lowest)</option>
+                      <option value="pctDesc">Overall Pct (Highest)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Table View */}
+                <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
+                        <th rowSpan={2} className="py-2.5 px-3 text-center w-12 border-r border-zinc-200 dark:border-zinc-850">Sl. No.</th>
+                        <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Admission Number</th>
+                        <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Register Number</th>
+                        <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Student Name</th>
+                        <th rowSpan={2} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850">Language Choice</th>
+                        
+                        {activeOrderedSubjectIds.map(subjectId => {
+                          if (subjectId === 'language') {
+                            return (
+                              <th
+                                key="language"
+                                colSpan={3}
+                                className="py-1 px-2 text-center border-b border-r border-zinc-200 dark:border-zinc-850"
+                              >
+                                <div className="break-words whitespace-normal mx-auto font-semibold">Language</div>
+                                <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans break-words whitespace-normal mx-auto mt-0.5" title="Language Elective Faculty">
+                                  Language Staff
+                                </div>
+                              </th>
+                            );
+                          }
+
+                          const sub = subjectsList.find(s => s._id === subjectId);
+                          if (!sub) return null;
+
+                          return (
+                            <th
+                              key={sub._id}
+                              colSpan={3}
+                              className="py-1 px-2 text-center font-mono border-b border-r border-zinc-200 dark:border-zinc-850"
+                            >
+                              <div className="break-words whitespace-normal mx-auto">{sub.subjectId}</div>
+                              <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans break-words whitespace-normal mx-auto mt-0.5" title={sub.facultyName}>
+                                {sub.facultyName}
+                              </div>
+                            </th>
+                          );
+                        })}
+                        
+                        <th rowSpan={2} className="py-2.5 px-3 text-right">Overall Submission</th>
+                      </tr>
+                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/20 dark:bg-zinc-900/10 text-zinc-500 dark:text-zinc-400 font-semibold text-[10px]">
+                        {activeOrderedSubjectIds.map(subjectId => (
+                          <React.Fragment key={`${subjectId}-subheaders`}>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10 font-bold">TA</th>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10 font-bold">SA</th>
+                            <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10 font-bold">%</th>
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAssignData.length === 0 ? (
+                        <tr>
+                          <td colSpan={totalColsCount} className="py-8 text-center text-zinc-500 italic">
+                            No students match your search query.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredAssignData.map((row, idx) => {
+                          const overallLow = row.overallPercentage !== 'N/A' && row.overallPercentage < 75;
+
+                          let languageCell = null;
+                          if (showLanguageColumn) {
+                            const studentLangSub = languageSubjects.find(sub => {
+                              const subAssign = row.assignments?.[sub._id];
+                              return subAssign && subAssign.isEnrolled;
+                            });
+
+                            if (!studentLangSub) {
+                              languageCell = (
+                                <React.Fragment>
+                                  <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>
+                                  <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>
+                                  <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 font-bold uppercase text-[9px]">N/A</td>
+                                </React.Fragment>
+                              );
+                            } else {
+                              const subAssign = row.assignments?.[studentLangSub._id];
+                              const facultyTooltip = `Faculty: ${studentLangSub.facultyName || 'Not Allocated'}`;
+                              if (!subAssign || subAssign.TA === 0) {
+                                languageCell = (
+                                  <React.Fragment>
+                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>0</td>
+                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900" title={facultyTooltip}>0</td>
+                                    <td className="py-2.5 text-center text-zinc-400 border-r border-zinc-100 dark:border-zinc-900 font-semibold" title={facultyTooltip}>-</td>
+                                  </React.Fragment>
+                                );
+                              } else {
+                                languageCell = (
+                                  <React.Fragment>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono text-zinc-500" title={facultyTooltip}>{subAssign.TA}</td>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold text-zinc-650" title={facultyTooltip}>{subAssign.SA}</td>
+                                    <td className="py-2.5 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold" title={facultyTooltip}>
+                                      <span className={subAssign.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
+                                        {subAssign.percentage}%
+                                      </span>
+                                    </td>
+                                  </React.Fragment>
+                                );
+                              }
+                            }
+                          }
+
+                          return (
+                            <tr key={row._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
+                              <td className="py-2.5 px-3 text-center border-r border-zinc-100 dark:border-zinc-900 font-medium text-zinc-400">{idx + 1}</td>
+                              <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold text-zinc-500">{row.admissionNumber || 'N/A'}</td>
+                              <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold">{row.studentId || '—'}</td>
+                              <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-semibold">{row.fullName}</td>
+                              <td className="py-2.5 px-3 text-center border-r border-zinc-100 dark:border-zinc-900 uppercase text-[10px] text-zinc-400 font-bold">{row.language || 'N/A'}</td>
+                              
+                              {activeOrderedSubjectIds.map(subjectId => {
+                                if (subjectId === 'language') {
+                                  return (
+                                    <React.Fragment key="language-cells">
+                                      {languageCell}
+                                    </React.Fragment>
+                                  );
+                                }
+
+                                const sub = subjectsList.find(s => s._id === subjectId);
+                                if (!sub) return null;
+
+                                const subAssign = row.assignments?.[sub._id];
+                                if (!subAssign) {
+                                  return (
+                                    <React.Fragment key={`${sub._id}-cells`}>
+                                      <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400">0</td>
+                                      <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400">0</td>
+                                      <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400">-</td>
+                                    </React.Fragment>
+                                  );
+                                }
+                                if (!subAssign.isEnrolled) {
+                                  return (
+                                    <React.Fragment key={`${sub._id}-cells`}>
+                                      <td colSpan={3} className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400 italic bg-zinc-50/50 dark:bg-zinc-900/10">N/A</td>
+                                    </React.Fragment>
+                                  );
+                                }
+                                return (
+                                  <React.Fragment key={`${sub._id}-cells`}>
+                                    <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900">{subAssign.TA}</td>
+                                    <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900">{subAssign.SA}</td>
+                                    <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900">
+                                      <span className={subAssign.percentage < 75 ? 'text-red-500 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>
+                                        {subAssign.percentage === 'N/A' ? 'N/A' : `${subAssign.percentage}%`}
+                                      </span>
+                                    </td>
+                                  </React.Fragment>
+                                );
+                              })}
+
+                              <td className="py-2.5 px-3 text-right">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  overallLow
+                                    ? 'bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400'
+                                    : row.overallPercentage === 'N/A'
+                                    ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-400'
+                                    : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                }`}>
+                                  {row.overallPercentage === 'N/A' ? '-' : `${row.overallPercentage}%`}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         );
       } else if (window.location.pathname.endsWith("/courses")) {
@@ -3049,7 +5415,7 @@ export const DashboardHome = () => {
                   <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-550 dark:text-zinc-400 font-semibold">
+                        <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
                           <th className="py-2.5 px-3">Course / Dept ID</th>
                           <th className="py-2.5 px-3">Course Name</th>
                           <th className="py-2.5 px-3 text-right">Associated College</th>
@@ -3074,6 +5440,1229 @@ export const DashboardHome = () => {
                   </div>
                 </CardContent>
               </Card>
+        );
+      } else if (window.location.pathname.endsWith("/grades")) {
+        const filteredIaData = getFilteredAndSortedIaData();
+        const hasRecords = hodIaConsolidatedData && hodIaConsolidatedData.data && hodIaConsolidatedData.data.length > 0;
+        const subjectsList = hodIaConsolidatedData?.subjects || [];
+        const maxMarks = hodIaConsolidatedData?.assessment?.maxMarks || 50;
+        const totalColsCount = 5 + subjectsList.length * 2 + 1;
+
+        return (
+          <div className="space-y-6">
+            {/* Tab Header Selector */}
+            <div className="flex border-b border-zinc-200 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setHodIaActiveSubTab("ledger")}
+                className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
+                  hodIaActiveSubTab === "ledger"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-zinc-500 dark:text-zinc-400"
+                }`}
+              >
+                Consolidated Ledger
+              </button>
+              <button
+                type="button"
+                onClick={() => setHodIaActiveSubTab("dynamic")}
+                className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
+                  hodIaActiveSubTab === "dynamic"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-zinc-500 dark:text-zinc-400"
+                }`}
+              >
+                Dynamic Consolidation Sheets
+              </button>
+              <button
+                type="button"
+                onClick={() => setHodIaActiveSubTab("manage")}
+                className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
+                  hodIaActiveSubTab === "manage"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
+                }`}
+              >
+                Manage Assessments
+              </button>
+            </div>
+
+            {hodIaActiveSubTab === "manage" ? (
+              <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
+                {/* Left side: Create Assessment Form */}
+                <div className="lg:col-span-5 space-y-6">
+                  <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+                    <CardHeader>
+                      <CardTitle className="text-zinc-900 dark:text-white text-sm font-semibold flex items-center space-x-2">
+                        <PlusCircle className="h-5 w-5 text-zinc-400" />
+                        <span>Create Internal Assessment</span>
+                      </CardTitle>
+                      <CardDescription className="text-xs text-zinc-500">
+                        Register a new internal exam session for a student batch & semester.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={createHODInternalAssessment} className="space-y-4 text-xs">
+                        <div className="space-y-1">
+                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Assessment Title *</Label>
+                          <Input
+                            type="text"
+                            placeholder="e.g. IA-1, IA-2, Model Exam"
+                            value={hodIaTitle}
+                            onChange={(e) => setHodIaTitle(e.target.value)}
+                            className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Batch *</Label>
+                          <select
+                            className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                            value={hodIaSelectedBatch?._id || ""}
+                            onChange={(e) => {
+                              const b = batches.find(x => x._id === e.target.value);
+                              setHodIaSelectedBatch(b || null);
+                            }}
+                          >
+                            <option value="">-- Select Batch --</option>
+                            {batches.map(b => (
+                              <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Semester *</Label>
+                          <select
+                            className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                            disabled={!hodIaSelectedBatch}
+                            value={hodIaSelectedSemester?._id || ""}
+                            onChange={(e) => {
+                              const s = (hodSemesters || []).find(x => x._id === e.target.value);
+                              setHodIaSelectedSemester(s || null);
+                            }}
+                          >
+                            <option value="">-- Select Semester --</option>
+                            {(hodSemesters || []).map(s => (
+                              <option key={s._id} value={s._id}>{s.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 w-full h-8">
+                          Create Assessment
+                        </Button>
+                      </form>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Right side: Assessment Registry */}
+                <div className="lg:col-span-7 space-y-6">
+                  <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950">
+                    <CardHeader>
+                      <CardTitle className="text-zinc-900 dark:text-white text-sm font-semibold flex items-center space-x-2">
+                        <BookOpen className="h-5 w-5 text-zinc-400" />
+                        <span>Created Assessments Registry</span>
+                      </CardTitle>
+                      <CardDescription className="text-xs text-zinc-500 text-zinc-500 text-zinc-500">
+                        View and manage active assessments configured for the semester.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
+                              <th className="py-2 px-3">Title</th>
+                              <th className="py-2 px-3">Max Marks</th>
+                              <th className="py-2 px-3">Created Date</th>
+                              <th className="py-2 px-3 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {hodIaLoading ? (
+                              <tr>
+                                <td colSpan={5} className="py-4 text-center text-zinc-500 italic animate-pulse">Loading assessments...</td>
+                              </tr>
+                            ) : hodIaList.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="py-4 text-center text-zinc-500 italic">No assessments created for this semester.</td>
+                              </tr>
+                            ) : (
+                              hodIaList.map(ia => (
+                                  <tr key={ia._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300">
+                                    <td className="py-2 px-3 font-semibold text-zinc-900 dark:text-white">{ia.title}</td>
+                                    <td className="py-2 px-3 font-mono">{ia.maxMarks}</td>
+                                    <td className="py-2 px-3 text-zinc-500 dark:text-zinc-450">{new Date(ia.createdAt).toLocaleDateString()}</td>
+                                    <td className="py-2 px-3 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => deleteHODInternalAssessment(ia._id)}
+                                        className="text-red-500 hover:text-red-700 hover:bg-red-550/20 dark:hover:bg-red-950/20 p-1 rounded"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            ) : hodIaActiveSubTab === "dynamic" ? (
+              // Dynamic consolidation sheet layout
+              <div className="space-y-6">
+                <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950">
+                  <CardHeader className="pb-4 border-b border-zinc-100 dark:border-zinc-900">
+                    <CardTitle className="text-zinc-900 dark:text-white text-base flex items-center space-x-2">
+                      <FileSpreadsheet className="h-5 w-5 text-zinc-400" />
+                      <span>Dynamic IA Consolidation Sheets</span>
+                    </CardTitle>
+                    <CardDescription className="text-zinc-500 text-xs mt-1">
+                      Configure custom columns, assignments, attendance thresholds, and calculated formulas subject-wise.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4 text-xs py-4">
+                    {/* Batch filter */}
+                    <div className="space-y-1">
+                      <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Batch *</Label>
+                      <select
+                        className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                        value={dynIaSelectedBatch?._id || ""}
+                        onChange={(e) => {
+                          const b = batches.find(x => x._id === e.target.value);
+                          setDynIaSelectedBatch(b || null);
+                        }}
+                      >
+                        <option value="">-- Choose Batch --</option>
+                        {batches.map(b => (
+                          <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Semester filter */}
+                    <div className="space-y-1">
+                      <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Semester *</Label>
+                      <select
+                        className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                        disabled={!dynIaSelectedBatch}
+                        value={dynIaSelectedSemester?._id || ""}
+                        onChange={(e) => {
+                          const s = (dynIaSemesters || []).find(x => x._id === e.target.value);
+                          setDynIaSelectedSemester(s || null);
+                        }}
+                      >
+                        <option value="">-- Choose Semester --</option>
+                        {(dynIaSemesters || []).map(s => (
+                          <option key={s._id} value={s._id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Section filter */}
+                    <div className="space-y-1">
+                      <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Section</Label>
+                      <select
+                        className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                        disabled={!dynIaSelectedSemester}
+                        value={dynIaSelectedSection}
+                        onChange={(e) => setDynIaSelectedSection(e.target.value)}
+                      >
+                        <option value="all">Semester-Wide</option>
+                        {(dynIaSections || []).map(sec => (
+                          <option key={sec._id} value={sec._id}>{sec.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {!dynIaSelectedSemester ? (
+                  <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                    Please select Batch and Semester from dropdowns to configure dynamic sheets.
+                  </div>
+                ) : dynIaSubjects.length === 0 ? (
+                  <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                    No subjects found configured for this semester.
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Subject Tabs */}
+                    <div className="flex flex-wrap border-b border-zinc-200 dark:border-zinc-800 gap-1">
+                      {dynIaSubjects.map(sub => (
+                        <button
+                          key={sub._id}
+                          type="button"
+                          onClick={() => setDynIaActiveSubject(sub)}
+                          className={`py-2 px-4 text-xs font-mono font-semibold border-t border-x rounded-t-md transition-colors ${
+                            dynIaActiveSubject?._id === sub._id
+                              ? "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-primary border-b-white dark:border-b-zinc-950 -mb-px z-10"
+                              : "border-transparent text-zinc-555 hover:text-zinc-900 dark:hover:text-white bg-zinc-50/50 dark:bg-zinc-900/10"
+                          }`}
+                        >
+                          {sub.subjectId}
+                        </button>
+                      ))}
+                    </div>
+
+                    {!dynIaActiveSubject ? (
+                      <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                        Select a subject tab to load sheet.
+                      </div>
+                    ) : dynIaSheetLoading ? (
+                      <div className="flex flex-col items-center justify-center p-24 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 space-y-4">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 dark:border-zinc-850 border-t-zinc-850 dark:border-t-zinc-200" />
+                        <span className="text-zinc-555 text-xs font-semibold animate-pulse">Loading baseline data sheet...</span>
+                      </div>
+                    ) : !dynIaSheetData ? (
+                      <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                        Failed to resolve baseline metrics registry database.
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {/* Action Buttons Toolbar */}
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-zinc-50/50 dark:bg-zinc-900/10 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 bg-primary text-white text-xs font-semibold flex items-center space-x-1"
+                              onClick={() => {
+                                setDynColName("");
+                                setDynColType("attendance");
+                                setDynColSourceId("");
+                                setDynColFormula("");
+                                setIsDynColModalOpen(true);
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                              <span>Add Custom Column</span>
+                            </Button>
+                            
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 border-zinc-200 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-900/50 flex items-center space-x-1"
+                              onClick={() => {
+                                if (window.confirm("Are you sure you want to reset columns config to default?")) {
+                                  const defaultCols = [
+                                    { id: "col_attendance", name: "Attendance %", type: "attendance", formula: "", sourceId: "" },
+                                    { id: "col_assignments", name: "Assignments %", type: "assignment", formula: "", sourceId: "" }
+                                  ];
+                                  (dynIaSheetData.iaAssessments || []).forEach(ia => {
+                                    defaultCols.push({
+                                      id: `col_ia_${ia._id}`,
+                                      name: `${ia.title} (Max: ${dynIaSheetData.iaMaxMarks[ia._id] || 50})`,
+                                      type: "ia",
+                                      formula: "",
+                                      sourceId: ia._id
+                                    });
+                                  });
+                                  setDynIaSheetColumns(defaultCols);
+                                  setDynIaSheetCustomData([]);
+                                }
+                              }}
+                            >
+                              <span>Reset to Default</span>
+                            </Button>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <div className="relative w-48 sm:w-64">
+                              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                              <Input
+                                type="text"
+                                placeholder="Search students..."
+                                value={dynIaSearchQuery}
+                                onChange={(e) => setDynIaSearchQuery(e.target.value)}
+                                className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                              />
+                            </div>
+
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 border-zinc-200 text-xs font-semibold flex items-center space-x-1"
+                              onClick={downloadHODDynamicSheetExcel}
+                            >
+                              <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                              <span>Export Excel</span>
+                            </Button>
+
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={dynIaSaving}
+                              className="h-8 bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs font-semibold flex items-center space-x-1"
+                              onClick={saveDynIaSheetConfig}
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                              <span>{dynIaSaving ? "Saving..." : "Save Sheet Config"}</span>
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* dynamic sheet table rendering */}
+                        <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
+                          {(() => {
+                            let roster = [...(dynIaSheetData.students || [])];
+                            
+                            const filteredRoster = roster.filter(s => {
+                              const q = dynIaSearchQuery.toLowerCase().trim();
+                              if (!q) return true;
+                              return s.fullName.toLowerCase().includes(q) || (s.studentId || "").toLowerCase().includes(q);
+                            });
+
+                            const getVal = (studentId, col) => {
+                              if (col.type === "attendance") {
+                                return dynIaSheetData.attendance[studentId] || 0;
+                              }
+                              if (col.type === "subject_attendance") {
+                                const subAttMap = dynIaSheetData.allSubjectAttendance?.[col.sourceId] || {};
+                                return subAttMap[studentId] !== undefined ? subAttMap[studentId] : 0;
+                              }
+                              if (col.type === "assignment") {
+                                return dynIaSheetData.assignments[studentId] || 0;
+                              }
+                              if (col.type === "ia") {
+                                const iaMarks = dynIaSheetData.iaMarks[col.sourceId] || {};
+                                return iaMarks[studentId] !== undefined ? iaMarks[studentId] : 0;
+                              }
+                              if (col.type === "custom") {
+                                const entry = dynIaSheetCustomData.find(d => d.student.toString() === studentId.toString());
+                                if (entry && entry.values && entry.values[col.id] !== undefined) {
+                                  return entry.values[col.id];
+                                }
+                                return 0;
+                              }
+                              if (col.type === "formula") {
+                                return evalFormula(studentId, col.formula);
+                              }
+                              return 0;
+                            };
+
+                            const evalFormula = (studentId, formulaStr) => {
+                              if (!formulaStr) return 0;
+                              let expression = formulaStr;
+                              
+                              // Sort columns by name length descending to prevent substring mismatch (e.g. replacing 'IA' inside 'IA-1')
+                              const sortedCols = [...dynIaSheetColumns].sort((a, b) => b.name.length - a.name.length);
+                              
+                              for (const col of sortedCols) {
+                                if (expression.includes(col.name)) {
+                                  const escapedName = col.name.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                                  const regex = new RegExp(escapedName, 'g');
+                                  
+                                  if (col.type === "formula" && col.formula.includes(col.name)) {
+                                    expression = expression.replace(regex, "0");
+                                  } else {
+                                    const val = getVal(studentId, col);
+                                    expression = expression.replace(regex, Number(val) || 0);
+                                  }
+                                }
+                              }
+
+                              try {
+                                const safeExpression = expression.replace(/[^0-9+\-*/().\s]/g, "");
+                                if (!safeExpression) return 0;
+                                const result = (0, eval)(safeExpression);
+                                return isNaN(result) || !isFinite(result) ? 0 : parseFloat(result.toFixed(2));
+                              } catch (err) {
+                                return "Error";
+                              }
+                            };
+
+                            return (
+                              <table className="w-full text-left border-collapse text-xs excel-table">
+                                <thead>
+                                  <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
+                                    <th data-column-id="slNo" className="py-2.5 px-3 text-center w-12 border-r border-zinc-200 dark:border-zinc-850 cursor-pointer select-none">Sl. No.</th>
+                                    <th data-column-id="admissionNumber" className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850 cursor-pointer select-none">Admission Number</th>
+                                    <th data-column-id="studentId" className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850 cursor-pointer select-none">Register Number</th>
+                                    <th data-column-id="fullName" className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850 cursor-pointer select-none">Student Name</th>
+                                    
+                                    {dynIaSheetColumns.map((col, idx) => {
+                                      const isDragOver = dragOverDynColIdx === idx;
+                                      const isDragging = draggedDynColIdx === idx;
+                                      
+                                      return (
+                                        <th
+                                          key={col.id}
+                                          data-column-id={col.id}
+                                          draggable
+                                          onDragStart={(e) => handleDynColDragStart(e, idx)}
+                                          onDragOver={(e) => handleDynColDragOver(e, idx)}
+                                          onDrop={(e) => handleDynColDrop(e, idx)}
+                                          onDragEnd={handleDynColDragEnd}
+                                          className={`py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850 text-center font-semibold cursor-pointer select-none group min-w-[120px] transition-all ${
+                                            isDragOver ? 'bg-zinc-100 dark:bg-zinc-800 border-l-2 border-l-primary' : ''
+                                          } ${isDragging ? 'opacity-40 scale-95' : ''}`}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="truncate max-w-[70px]" title={col.name}>{col.name}</span>
+                                            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <button
+                                                type="button"
+                                                className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setEditingColumn(col);
+                                                  setDynColName(col.name);
+                                                  setDynColType(col.type);
+                                                  setDynColSourceId(col.sourceId || "");
+                                                  setDynColFormula(col.formula || "");
+                                                  setIsDynColModalOpen(true);
+                                                }}
+                                              >
+                                                <Edit className="h-3.5 w-3.5" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="text-red-500 hover:text-red-700 transition-colors"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (window.confirm(`Are you sure you want to delete column "${col.name}"?`)) {
+                                                    setDynIaSheetColumns(prev => prev.filter(c => c.id !== col.id));
+                                                  }
+                                                }}
+                                              >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </th>
+                                      );
+                                    })}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filteredRoster.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={3 + dynIaSheetColumns.length} className="py-8 text-center text-zinc-500 italic">
+                                        No matching student records found.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    filteredRoster.map((row, idx) => (
+                                      <tr
+                                        key={row._id}
+                                        className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/10"
+                                      >
+                                        <td data-column-id="slNo" className="py-2.5 px-3 text-center border-r border-zinc-100 dark:border-zinc-900 font-medium text-zinc-400">{idx + 1}</td>
+                                        <td data-column-id="admissionNumber" className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold text-zinc-500">{row.admissionNumber || 'N/A'}</td>
+                                        <td data-column-id="studentId" className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold">{row.studentId}</td>
+                                        <td data-column-id="fullName" className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-semibold">{row.fullName}</td>
+
+                                        {dynIaSheetColumns.map(col => {
+                                          const val = getVal(row._id, col);
+                                          const isEditing = dynIaEditingCell &&
+                                            dynIaEditingCell.studentId === row._id &&
+                                            dynIaEditingCell.columnId === col.id;
+
+                                          const isCustom = col.type === "custom";
+
+                                          return (
+                                            <td
+                                              key={col.id}
+                                              data-column-id={col.id}
+                                              className={`py-2 px-2 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono ${
+                                                isCustom ? "cursor-pointer bg-amber-50/10 dark:bg-amber-955/5" : ""
+                                              }`}
+                                              onDoubleClick={() => {
+                                                if (isCustom) {
+                                                  setDynIaEditingCell({ studentId: row._id, columnId: col.id });
+                                                  setDynIaEditValue(val.toString());
+                                                }
+                                              }}
+                                            >
+                                              {isEditing ? (
+                                                <input
+                                                  type="number"
+                                                  value={dynIaEditValue}
+                                                  onChange={(e) => setDynIaEditValue(e.target.value)}
+                                                  autoFocus
+                                                  onBlur={() => {
+                                                    const numericValue = parseFloat(parseFloat(dynIaEditValue).toFixed(2)) || 0;
+                                                    
+                                                    setDynIaSheetCustomData(prev => {
+                                                      const updated = [...prev];
+                                                      let entry = updated.find(d => d.student.toString() === row._id.toString());
+                                                      if (!entry) {
+                                                        entry = { student: row._id, values: {} };
+                                                        updated.push(entry);
+                                                      }
+                                                      entry.values[col.id] = numericValue;
+                                                      return updated;
+                                                    });
+
+                                                    setDynIaEditingCell(null);
+                                                  }}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                      e.target.blur();
+                                                    }
+                                                    if (e.key === "Escape") {
+                                                      setDynIaEditingCell(null);
+                                                    }
+                                                  }}
+                                                  className="h-6 w-16 text-center font-mono font-bold text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded shadow-sm focus:outline-none"
+                                                />
+                                              ) : (
+                                                <span className={col.type === "formula" ? "font-bold text-zinc-900 dark:text-white" : ""}>
+                                                  {val}
+                                                </span>
+                                              )}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Column wizard popup */}
+                {isDynColModalOpen && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                      <div className="p-4 border-b border-zinc-150 dark:border-zinc-850 flex items-center justify-between">
+                        <h3 className="font-semibold text-zinc-900 dark:text-white text-sm">
+                          {editingColumn ? "Edit Consolidation Column" : "Add Custom Consolidation Column"}
+                        </h3>
+                        <button
+                          onClick={() => {
+                            setIsDynColModalOpen(false);
+                            setEditingColumn(null);
+                          }}
+                          className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="p-4 space-y-4 text-xs">
+                        <div className="space-y-1">
+                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Column Header Name *</Label>
+                          <Input
+                            type="text"
+                            placeholder="e.g. Attendance Marks, Exam Avg"
+                            value={dynColName}
+                            onChange={(e) => setDynColName(e.target.value)}
+                            className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Column Source Type *</Label>
+                          <select
+                            value={dynColType}
+                            onChange={(e) => {
+                              setDynColType(e.target.value);
+                              setDynColSourceId("");
+                              setDynColFormula("");
+                            }}
+                            className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                          >
+                            <option value="attendance">Attendance Percentage</option>
+                            <option value="subject_attendance">Subject Attendance</option>
+                            <option value="assignment">Assignment Completion %</option>
+                            <option value="ia">Internal Assessment Mark</option>
+                            <option value="custom">Empty Column (Manual Marks)</option>
+                            <option value="formula">Calculated Formula Column</option>
+                          </select>
+                        </div>
+
+                        {dynColType === "subject_attendance" && (
+                          <div className="space-y-1">
+                            <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Select Subject *</Label>
+                            <select
+                              value={dynColSourceId}
+                              onChange={(e) => setDynColSourceId(e.target.value)}
+                              className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                            >
+                              <option value="">-- Select Subject --</option>
+                              {dynIaSubjects.map(sub => (
+                                <option key={sub._id} value={sub._id}>{sub.subjectId} - {sub.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {dynColType === "ia" && (
+                          <div className="space-y-1">
+                            <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Select IA Session *</Label>
+                            <select
+                              value={dynColSourceId}
+                              onChange={(e) => setDynColSourceId(e.target.value)}
+                              className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                            >
+                              <option value="">-- Select Exam Session --</option>
+                              {(dynIaSheetData?.iaAssessments || []).map(ia => (
+                                <option key={ia._id} value={ia._id}>{ia.title}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {dynColType === "formula" && (
+                          <div className="space-y-2">
+                            <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Enter Formula Expression *</Label>
+                            <div className="relative">
+                              <Input
+                                id="dynColFormulaInput"
+                                type="text"
+                                placeholder="e.g. (Attendance % * 0.1) + (IA-1 * 0.8)"
+                                value={dynColFormula}
+                                onChange={(e) => {
+                                  setDynColFormula(e.target.value);
+                                  const val = e.target.value;
+                                  const cursor = e.target.selectionStart || 0;
+                                  const prefix = val.substring(0, cursor);
+                                  const words = prefix.split(/[\s+\-*/()]/);
+                                  const lastWord = words[words.length - 1] || "";
+                                  setFormulaSearchWord(lastWord);
+                                }}
+                                className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white font-mono"
+                              />
+                              
+                              {/* Autocomplete variable suggestions list */}
+                              {formulaSearchWord.trim() !== "" && (
+                                <div className="absolute left-0 right-0 mt-1 z-55 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-1 shadow-lg max-h-32 overflow-y-auto space-y-0.5">
+                                  <div className="text-[9px] text-zinc-400 px-1.5 py-0.5 font-sans font-semibold">Variable Suggestions:</div>
+                                  {(() => {
+                                    const matches = dynIaSheetColumns.filter(col => 
+                                      col.name.toLowerCase().includes(formulaSearchWord.toLowerCase()) &&
+                                      col.name.toLowerCase() !== formulaSearchWord.toLowerCase()
+                                    );
+                                    if (matches.length === 0) return <div className="text-[10px] text-zinc-500 italic px-1.5 py-0.5 font-sans">No matching variables</div>;
+                                    return matches.map(col => (
+                                      <button
+                                        key={col.id}
+                                        type="button"
+                                        onClick={() => {
+                                          const input = document.getElementById("dynColFormulaInput");
+                                          const cursor = input ? input.selectionStart : dynColFormula.length;
+                                          const prefix = dynColFormula.substring(0, cursor);
+                                          const suffix = dynColFormula.substring(cursor);
+                                          
+                                          const lastWordIdx = prefix.lastIndexOf(formulaSearchWord);
+                                          const newPrefix = lastWordIdx !== -1 
+                                            ? prefix.substring(0, lastWordIdx) + col.name 
+                                            : prefix + col.name;
+                                          
+                                          setDynColFormula(newPrefix + suffix);
+                                          setFormulaSearchWord("");
+                                          setTimeout(() => {
+                                            if (input) {
+                                              input.focus();
+                                              const newCursorPos = newPrefix.length;
+                                              input.setSelectionRange(newCursorPos, newCursorPos);
+                                            }
+                                          }, 50);
+                                        }}
+                                        className="w-full text-left px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded font-mono text-[11px] text-zinc-700 dark:text-zinc-300 transition-colors"
+                                      >
+                                        {col.name}
+                                      </button>
+                                    ));
+                                  })()}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Clickable Column Badges list */}
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">Click to insert column variable:</Label>
+                              <div className="flex flex-wrap gap-1">
+                                {dynIaSheetColumns.map(col => (
+                                  <button
+                                    key={col.id}
+                                    type="button"
+                                    onClick={() => {
+                                      const input = document.getElementById("dynColFormulaInput");
+                                      const cursor = input ? input.selectionStart : dynColFormula.length;
+                                      const prefix = dynColFormula.substring(0, cursor);
+                                      const suffix = dynColFormula.substring(cursor);
+                                      setDynColFormula(prefix + col.name + suffix);
+                                      setTimeout(() => {
+                                        if (input) {
+                                          input.focus();
+                                          const newCursorPos = cursor + col.name.length;
+                                          input.setSelectionRange(newCursorPos, newCursorPos);
+                                        }
+                                      }, 50);
+                                    }}
+                                    className="px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 hover:bg-zinc-150 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[10px] font-mono transition-colors text-zinc-650 dark:text-zinc-300"
+                                  >
+                                    {col.name}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="bg-zinc-50 dark:bg-zinc-900/50 p-2.5 rounded border border-zinc-200 dark:border-zinc-800 text-[10px] text-zinc-555 dark:text-zinc-400 leading-relaxed">
+                              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Spreadsheet Formula Guide:</span>
+                              <ul className="list-disc pl-3 mt-1 space-y-0.5 font-sans">
+                                <li>Type column names directly, or select them from the suggestions dropdown list or buttons.</li>
+                                <li>Supported operators: addition (<code className="font-mono bg-zinc-200 dark:bg-zinc-850 px-0.5 rounded">+</code>), subtraction (<code className="font-mono bg-zinc-200 dark:bg-zinc-850 px-0.5 rounded">-</code>), multiplication (<code className="font-mono bg-zinc-200 dark:bg-zinc-850 px-0.5 rounded">*</code>), division (<code className="font-mono bg-zinc-200 dark:bg-zinc-850 px-0.5 rounded">/</code>), and parentheses (<code className="font-mono bg-zinc-200 dark:bg-zinc-850 px-0.5 rounded">()</code>).</li>
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-4 border-t border-zinc-150 dark:border-zinc-850 flex items-center justify-end space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setIsDynColModalOpen(false);
+                            setEditingColumn(null);
+                          }}
+                          className="h-8 border-zinc-200 text-xs font-semibold"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-8 bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs font-semibold"
+                          onClick={() => {
+                            if (!dynColName.trim()) {
+                              toast.error("Column header name is required");
+                              return;
+                            }
+                            if (dynColType === "ia" && !dynColSourceId) {
+                              toast.error("IA session selection is required");
+                              return;
+                            }
+                            if (dynColType === "subject_attendance" && !dynColSourceId) {
+                              toast.error("Subject selection is required");
+                              return;
+                            }
+                            if (dynColType === "formula" && !dynColFormula.trim()) {
+                              toast.error("Formula expression is required");
+                              return;
+                            }
+
+                            const newCol = {
+                              id: editingColumn ? editingColumn.id : "col_custom_" + Date.now(),
+                              name: dynColName.trim(),
+                              type: dynColType,
+                              formula: dynColFormula.trim(),
+                              sourceId: dynColSourceId
+                            };
+
+                            if (editingColumn) {
+                              setDynIaSheetColumns(prev => prev.map(c => c.id === editingColumn.id ? newCol : c));
+                              setEditingColumn(null);
+                              toast.success("Column updated successfully.");
+                            } else {
+                              setDynIaSheetColumns(prev => [...prev, newCol]);
+                              toast.success("Column " + dynColName + " added successfully.");
+                            }
+                            setIsDynColModalOpen(false);
+                          }}
+                        >
+                          {editingColumn ? "Save Changes" : "Add Column"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Consolidated IA Marks Ledger Tab
+              <div className="space-y-6">
+                <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+                  <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 pb-4 border-b border-zinc-100 dark:border-zinc-900">
+                    <div>
+                      <CardTitle className="text-zinc-900 dark:text-white text-base flex items-center space-x-2">
+                        <CheckCircle className="h-5 w-5 text-zinc-400" />
+                        <span>Consolidated Internal Assessment Ledger</span>
+                      </CardTitle>
+                      <CardDescription className="text-zinc-500 text-xs mt-1">
+                        Inspect scores, fail rates, and marks metrics across all course subjects.
+                      </CardDescription>
+                    </div>
+                    {hasRecords && (
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={copyHODConsolidatedIaToClipboard}
+                          className="text-xs h-8 px-3 border-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300 flex items-center space-x-1 font-semibold"
+                        >
+                          <Copy className="h-4 w-4" />
+                          <span>Copy Table Data</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={downloadHODConsolidatedIaExcel}
+                          className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold"
+                        >
+                          <FileSpreadsheet className="h-4 w-4" />
+                          <span>Export Excel Report</span>
+                        </Button>
+                      </div>
+                    )}
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4 text-xs pb-2">
+                      <div className="space-y-1">
+                        <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Batch *</Label>
+                        <select
+                          className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                          value={hodIaConsolidatedSelectedBatch?._id || ""}
+                          onChange={(e) => {
+                            const b = batches.find(x => x._id === e.target.value);
+                            setHodIaConsolidatedSelectedBatch(b || null);
+                          }}
+                        >
+                          <option value="">-- Select Batch --</option>
+                          {batches.map(b => (
+                            <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Semester *</Label>
+                        <select
+                          className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                          disabled={!hodIaConsolidatedSelectedBatch}
+                          value={hodIaConsolidatedSelectedSemester?._id || ""}
+                          onChange={(e) => {
+                            const s = (hodSemesters || []).find(x => x._id === e.target.value);
+                            setHodIaConsolidatedSelectedSemester(s || null);
+                          }}
+                        >
+                          <option value="">-- Select Semester --</option>
+                          {(hodSemesters || []).map(s => (
+                            <option key={s._id} value={s._id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Class / Section</Label>
+                        <select
+                          className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                          disabled={!hodIaConsolidatedSelectedSemester}
+                          value={hodIaConsolidatedSelectedSection}
+                          onChange={(e) => setHodIaConsolidatedSelectedSection(e.target.value)}
+                        >
+                          <option value="all">Semester-Wide (All Sections)</option>
+                          {(hodSections || []).map(sec => (
+                            <option key={sec._id} value={sec._id}>{sec.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose IA Session *</Label>
+                        <select
+                          className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                          disabled={!hodIaConsolidatedSelectedSemester}
+                          value={hodIaConsolidatedSelectedAssessment?._id || ""}
+                          onChange={(e) => {
+                            const ia = (hodIaList || []).find(x => x._id === e.target.value);
+                            setHodIaConsolidatedSelectedAssessment(ia || null);
+                          }}
+                        >
+                          <option value="">-- Select Assessment --</option>
+                          {(hodIaList || []).map(ia => (
+                            <option key={ia._id} value={ia._id}>{ia.title} (Max: {ia.maxMarks})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1 relative">
+                        <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Filter Subjects</Label>
+                        <button
+                          type="button"
+                          disabled={!hodIaConsolidatedSelectedAssessment}
+                          onClick={() => setIsIaSubjectDropdownOpen(!isIaSubjectDropdownOpen)}
+                          className="flex h-8 w-full items-center justify-between rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-50 text-left"
+                        >
+                          <span className="truncate">
+                            {!hodIaConsolidatedSelectedAssessment
+                              ? "Select IA first"
+                              : hodIaSelectedSubjectIds.length === 0
+                              ? "No subjects selected"
+                              : hodIaSelectedSubjectIds.length === (subjectsList.filter(s => s.subjectType !== 'language').length + (subjectsList.some(s => s.subjectType === 'language') ? 1 : 0))
+                              ? "All Subjects Selected"
+                              : `${hodIaSelectedSubjectIds.length} Subjects Selected`}
+                          </span>
+                          <ChevronDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
+                        </button>
+
+                        {isIaSubjectDropdownOpen && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-40" 
+                              onClick={() => setIsIaSubjectDropdownOpen(false)}
+                            />
+                            <div className="absolute right-0 left-0 mt-1 z-50 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 shadow-md max-h-60 overflow-y-auto space-y-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                              <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 dark:border-zinc-900 text-[10px] text-zinc-500">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const regularIds = subjectsList.filter(s => s.subjectType !== 'language').map(s => s._id);
+                                    const hasLang = subjectsList.some(s => s.subjectType === 'language');
+                                    setHodIaSelectedSubjectIds(hasLang ? [...regularIds, "language"] : regularIds);
+                                  }}
+                                  className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
+                                >
+                                  Select All
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setHodIaSelectedSubjectIds([])}
+                                  className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
+                                >
+                                  Deselect All
+                                </button>
+                              </div>
+                              
+                              {/* Language Option */}
+                              {subjectsList.some(s => s.subjectType === 'language') && (
+                                <label className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300 font-semibold">
+                                  <input
+                                    type="checkbox"
+                                    checked={hodIaSelectedSubjectIds.includes("language")}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setHodIaSelectedSubjectIds(prev => [...prev, "language"]);
+                                      } else {
+                                        setHodIaSelectedSubjectIds(prev => prev.filter(x => x !== "language"));
+                                      }
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                                  />
+                                  <span>Language</span>
+                                </label>
+                              )}
+
+                              {/* Regular Subjects */}
+                              {subjectsList.filter(s => s.subjectType !== 'language').map(sub => (
+                                <label key={sub._id} className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={hodIaSelectedSubjectIds.includes(sub._id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setHodIaSelectedSubjectIds(prev => [...prev, sub._id]);
+                                      } else {
+                                        setHodIaSelectedSubjectIds(prev => prev.filter(x => x !== sub._id));
+                                      }
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                                  />
+                                  <span>{sub.subjectId} - {sub.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {!hodIaConsolidatedSelectedAssessment ? (
+                  <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                    Please select Batch, Semester, and Assessment Session from dropdowns to display consolidated marks.
+                  </div>
+                ) : hodIaConsolidatedLoading ? (
+                  <div className="flex flex-col items-center justify-center p-24 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 space-y-4">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 dark:border-zinc-850 border-t-zinc-850 dark:border-t-zinc-200" />
+                    <span className="text-zinc-500 text-xs font-semibold animate-pulse">Loading consolidated marksheet...</span>
+                  </div>
+                ) : !hasRecords ? (
+                  <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                    No submitted assessment marks or student records found matching these criteria.
+                  </div>
+                ) : (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    {/* Search and Sort controls */}
+                    <div className="flex flex-col sm:flex-row gap-2 bg-zinc-50/50 dark:bg-zinc-900/10 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                        <Input
+                          type="text"
+                          placeholder="Search student name or register number..."
+                          value={hodIaSearchQuery}
+                          onChange={(e) => setHodIaSearchQuery(e.target.value)}
+                          className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <select
+                          className="h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                          value={hodIaSortCriteria}
+                          onChange={(e) => setHodIaSortCriteria(e.target.value)}
+                        >
+                          <option value="rollAsc">Register No (Asc)</option>
+                          <option value="rollDesc">Register No (Desc)</option>
+                          <option value="nameAsc">Name (A-Z)</option>
+                          <option value="pctAsc">Overall Pct (Lowest)</option>
+                          <option value="pctDesc">Overall Pct (Highest)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Table View */}
+                    <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
+                            <th rowSpan={2} className="py-2.5 px-3 text-center w-12 border-r border-zinc-200 dark:border-zinc-850">Sl. No.</th>
+                            <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Admission Number</th>
+                            <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Register Number</th>
+                            <th rowSpan={2} className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Student Name</th>
+                            <th rowSpan={2} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850">Language Choice</th>
+                                      {subjectsList.filter(s => hodIaSelectedSubjectIds.includes(s._id)).map(sub => (
+                              <th
+                                key={sub._id}
+                                colSpan={3}
+                                className="py-1 px-2 text-center font-mono border-b border-r border-zinc-200 dark:border-zinc-850"
+                              >
+                                <div className="break-words whitespace-normal mx-auto">{sub.subjectId}</div>
+                                <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans break-words whitespace-normal mx-auto mt-0.5" title={sub.facultyName}>
+                                  {sub.facultyName}
+                                </div>
+                              </th>
+                            ))}
+
+                            <th rowSpan={2} data-column-id="overall" className="py-2.5 px-3 text-right font-bold cursor-pointer select-none">Overall average</th>
+                          </tr>
+                          <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/20 dark:bg-zinc-900/10 text-zinc-500 dark:text-zinc-400 font-semibold text-[10px]">
+                            {subjectsList.filter(s => hodIaSelectedSubjectIds.includes(s._id)).map(sub => (
+                              <React.Fragment key={`${sub._id}-subheaders`}>
+                                <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-10 font-bold">Max</th>
+                                <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-12 font-bold">Scored</th>
+                                <th className="py-1 text-center border-r border-zinc-200 dark:border-zinc-850 w-12 font-bold">%</th>
+                              </React.Fragment>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredIaData.length === 0 ? (
+                            <tr>
+                              <td colSpan={totalColsCount} className="py-8 text-center text-zinc-500 italic">
+                                No students match your search query.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredIaData.map((row, idx) => {
+                              const overallLow = row.overallPercentage !== 'N/A' && row.overallPercentage < 50;
+
+                              return (
+                                <tr key={row._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/10">
+                                  <td className="py-2.5 px-3 text-center border-r border-zinc-100 dark:border-zinc-900 font-medium text-zinc-400">{idx + 1}</td>
+                                  <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold text-zinc-500">{row.admissionNumber || 'N/A'}</td>
+                                  <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold">{row.studentId || '—'}</td>
+                                  <td className="py-2.5 px-3 border-r border-zinc-100 dark:border-zinc-900 font-semibold">{row.fullName}</td>
+                                  <td className="py-2.5 px-3 text-center border-r border-zinc-100 dark:border-zinc-900 uppercase text-[10px] text-zinc-450 font-bold">{row.language || 'N/A'}</td>
+
+                                  {(() => {
+                                    const visibleSubjects = subjectsList.filter(s => hodIaSelectedSubjectIds.includes(s._id));
+                                    const visibleMarks = visibleSubjects
+                                      .map(sub => row.marks?.[sub._id])
+                                      .filter(entry => entry && entry.isEnrolled && entry.percentage !== 'N/A');
+                                    
+                                    let visibleSum = 0;
+                                    visibleMarks.forEach(entry => {
+                                      visibleSum += entry.percentage;
+                                    });
+
+                                    const dynamicOverall = visibleMarks.length > 0
+                                      ? parseFloat((visibleSum / visibleMarks.length).toFixed(2))
+                                      : 'N/A';
+
+                                    const dynamicOverallLow = dynamicOverall !== 'N/A' && dynamicOverall < 50;
+
+                                    return (
+                                      <>
+                                        {visibleSubjects.map(sub => {
+                                          const entry = row.marks?.[sub._id];
+                                          if (!entry) {
+                                            return (
+                                              <React.Fragment key={`${sub._id}-ia-cells`}>
+                                                <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-450 font-mono font-medium">{sub.maxMarks}</td>
+                                                <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400">-</td>
+                                                <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400">-</td>
+                                              </React.Fragment>
+                                            );
+                                          }
+                                          if (!entry.isEnrolled) {
+                                            return (
+                                              <React.Fragment key={`${sub._id}-ia-cells`}>
+                                                <td colSpan={3} className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400 italic bg-zinc-50/50 dark:bg-zinc-900/10">N/A</td>
+                                              </React.Fragment>
+                                            );
+                                          }
+
+                                          const isAbs = entry.status === 'absent';
+                                          const fail = entry.percentage !== 'N/A' && entry.percentage < 50;
+
+                                          return (
+                                            <React.Fragment key={`${sub._id}-ia-cells`}>
+                                              <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-450 font-mono font-medium">{entry.maxMarks || sub.maxMarks}</td>
+                                              <td className={`py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono ${isAbs ? 'text-red-500 font-bold' : ''}`}>
+                                                {isAbs ? 'AB' : entry.marksObtained}
+                                              </td>
+                                              <td className="py-2 px-1 text-center border-r border-zinc-100 dark:border-zinc-900 font-mono">
+                                                <span className={fail ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-zinc-700 dark:text-zinc-300'}>
+                                                  {entry.percentage === 'N/A' ? 'N/A' : `${entry.percentage}%`}
+                                                </span>
+                                              </td>
+                                            </React.Fragment>
+                                          );
+                                        })}
+
+                                        <td className="py-2.5 px-3 text-right font-semibold">
+                                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                                            dynamicOverallLow
+                                              ? 'bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400'
+                                              : dynamicOverall === 'N/A'
+                                              ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-400'
+                                              : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                          }`}>
+                                            {dynamicOverall === 'N/A' ? '-' : `${dynamicOverall}%`}
+                                          </span>
+                                        </td>
+                                      </>
+                                    );
+                                  })()}
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         );
       } else {
         return (
@@ -3252,6 +6841,17 @@ export const DashboardHome = () => {
                               <h4 className="font-semibold text-zinc-900 dark:text-white text-xs">Add Single Student Manually</h4>
                               <div className="space-y-2">
                                 <div>
+                                  <Label htmlFor="admissionNumber" className="text-zinc-700 dark:text-zinc-300">Admission Number</Label>
+                                  <Input
+                                    id="admissionNumber"
+                                    type="text"
+                                    placeholder="e.g. ADM202301"
+                                    value={newStudentAdmissionNumber}
+                                    onChange={(e) => setNewStudentAdmissionNumber(e.target.value)}
+                                    className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
+                                  />
+                                </div>
+                                <div>
                                   <Label htmlFor="studentId" className="text-zinc-700 dark:text-zinc-300">Roll Number / Student ID</Label>                                  <Input
                                     id="studentId"
                                     type="text"
@@ -3354,8 +6954,8 @@ export const DashboardHome = () => {
                               </div>                              {/* Visual template mock sheet */}
                               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2 rounded text-[10px] font-mono text-zinc-500 space-y-1">
                                 <p className="text-zinc-400 font-bold border-b pb-0.5 border-zinc-200 dark:border-zinc-800">Expected Columns (Edit in Excel):</p>
-                                <p>studentId,fullName,email,language</p>
-                                <p>STU202301,John Doe,john@example.com,KAN101</p>
+                                <p>admissionNumber,studentId,fullName,email,language</p>
+                                <p>ADM202301,STU202301,John Doe,john@example.com,KAN101</p>
                               </div>
 
                               {/* File Upload Option */}
@@ -3375,7 +6975,7 @@ export const DashboardHome = () => {
                                 <textarea
                                   id="csvText"
                                   rows={2}
-                                  placeholder="STU202301,John Doe,john@example.com,KAN101&#10;STU202302,Jane Smith,jane@example.com,HIN101"
+                                  placeholder="ADM202301,STU202301,John Doe,john@example.com,KAN101&#10;ADM202302,STU202302,Jane Smith,jane@example.com,HIN101"
                                   value={csvText}
                                   onChange={(e) => setCsvText(e.target.value)}
                                   className="w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white p-2 font-mono text-[10px] shadow-sm transition-colors focus-visible:outline-none"
@@ -3400,6 +7000,7 @@ export const DashboardHome = () => {
                             <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg">
                               <table className="w-full text-left border-collapse">                                <thead>
                                   <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
+                                    <th className="py-2 px-4">Admission No</th>
                                     <th className="py-2 px-4">Student ID</th>
                                     <th className="py-2 px-4">Full Name</th>
                                     <th className="py-2 px-4">Email</th>
@@ -3409,14 +7010,15 @@ export const DashboardHome = () => {
                                 <tbody>
                                   {students.length === 0 ? (
                                     <tr>
-                                      <td colSpan={4} className="py-4 text-center text-zinc-500">
+                                      <td colSpan={6} className="py-4 text-center text-zinc-500">
                                         No students registered in this batch yet. Use forms above to add.
                                       </td>
                                     </tr>
                                   ) : (
                                     students.map((s) => (
                                       <tr key={s._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
-                                        <td className="py-2 px-4 font-mono font-semibold">{s.studentId}</td>
+                                        <td className="py-2 px-4 font-mono font-semibold text-zinc-500">{s.admissionNumber || 'N/A'}</td>
+                                        <td className="py-2 px-4 font-mono font-semibold">{s.studentId || '—'}</td>
                                         <td className="py-2 px-4">{s.fullName}</td>
                                         <td className="py-2 px-4 text-zinc-500">{s.email}</td>
                                         <td className="py-2 px-4 font-semibold uppercase text-[10px] text-zinc-600 dark:text-zinc-400">{s.language || 'kan'}</td>
@@ -3574,7 +7176,8 @@ export const DashboardHome = () => {
                                           }}
                                           className="rounded border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900"
                                         />
-                                      </th>                                      <th className="py-2 px-4">Student ID</th>
+                                      </th>                                      <th className="py-2 px-4">Admission No</th>
+                                      <th className="py-2 px-4">Student ID</th>
                                       <th className="py-2 px-4">Full Name</th>
                                       <th className="py-2 px-4">Language</th>
                                       <th className="py-2 px-4 text-right">Assigned Section</th>
@@ -3583,7 +7186,7 @@ export const DashboardHome = () => {
                                   <tbody>
                                     {students.length === 0 ? (
                                       <tr>
-                                        <td colSpan={5} className="py-4 text-center text-zinc-500">
+                                        <td colSpan={6} className="py-4 text-center text-zinc-500">
                                           No students registered in this batch yet.
                                         </td>
                                       </tr>
@@ -3604,9 +7207,10 @@ export const DashboardHome = () => {
                                               className="rounded border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900"
                                             />
                                           </td>
-                                          <td className="py-2 px-4 font-mono font-semibold">{s.studentId}</td>
+                                          <td className="py-2 px-4 font-mono font-semibold text-zinc-500">{s.admissionNumber || 'N/A'}</td>
+                                          <td className="py-2 px-4 font-mono font-semibold">{s.studentId || '—'}</td>
                                           <td className="py-2 px-4">{s.fullName}</td>
-                                          <td className="py-2 px-4 font-bold uppercase text-[10px] text-zinc-550 dark:text-zinc-450">{s.language || 'kan'}</td>
+                                          <td className="py-2 px-4 font-bold uppercase text-[10px] text-zinc-500 dark:text-zinc-450">{s.language || 'kan'}</td>
                                           <td className="py-2 px-4 text-right">
                                             <select
                                               className="h-7 rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 py-0.5 text-[11px] font-semibold text-zinc-800 dark:text-zinc-200"
@@ -3641,27 +7245,280 @@ export const DashboardHome = () => {
       }
     } else if (user.role === "Faculty") {
       if (window.location.pathname.endsWith("/grades")) {
+        const availableSemesters = myAllocations
+          .filter(a => a.course === selectedFacultyCourse)
+          .map(a => a.semester)
+          .filter((sem, index, self) => sem && self.findIndex(s => s._id === sem._id) === index);
+
+        const availableSections = myAllocations
+          .filter(a => a.course === selectedFacultyCourse && a.semester?._id === selectedFacultySemesterId)
+          .map(a => a.section)
+          .filter((sec, index, self) => self.findIndex(s => (s?._id || "sem") === (sec?._id || "sem")) === index);
+
+        const availableSubjects = myAllocations
+          .filter(a => 
+            a.course === selectedFacultyCourse && 
+            a.semester?._id === selectedFacultySemesterId && 
+            (a.section?._id || "semester-wide") === (selectedFacultySectionId || "semester-wide")
+          )
+          .map(a => a.subject)
+          .filter((sub, index, self) => sub && self.findIndex(s => s._id === sub._id) === index);
+
+        const maxMarks = Number(facultyIaMaxMarks) || 50;
+
         return (
-              <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-                <CardHeader>
-                  <CardTitle className="text-zinc-900 dark:text-white text-base flex items-center space-x-2">
-                    <FileSpreadsheet className="h-5 w-5 text-zinc-400" />
-                    <span>Academic Grades Ledger</span>
-                  </CardTitle>
-                  <CardDescription className="text-zinc-505 text-xs">
-                    Grades, marks, and student evaluations ledger.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 text-xs">
-                  <div className="border border-zinc-200 dark:border-zinc-800 p-6 rounded-md bg-zinc-50 dark:bg-zinc-900/10 flex flex-col items-center justify-center text-center space-y-2">
-                    <Activity className="h-8 w-8 text-zinc-500 animate-pulse" />
-                    <h4 className="font-semibold text-zinc-900 dark:text-white">Academic grading ledger not open</h4>
-                    <p className="text-zinc-500 max-w-sm">
-                      Functional modules for entering semester grades, report card generation, and student marks distribution are part of subsequent releases.
-                    </p>
+          <div className="space-y-6">
+            {/* Filter Selection Panel */}
+            <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 shadow-sm animate-in fade-in duration-200">
+              <CardHeader>
+                <CardTitle className="text-zinc-900 dark:text-white text-base flex items-center space-x-2">
+                  <FileSpreadsheet className="h-5 w-5 text-zinc-400" />
+                  <span>Internal Assessment Grading Sheet</span>
+                </CardTitle>
+                <CardDescription className="text-zinc-500 text-xs">
+                  Select course details, subject allocation, and internal assessment test to record student scores.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-5 text-xs pb-4">
+                {/* Course Filter */}
+                <div className="space-y-1">
+                  <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Course / Department</Label>
+                  <select
+                    className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
+                    value={selectedFacultyCourse}
+                    onChange={(e) => {
+                      setSelectedFacultyCourse(e.target.value);
+                      setSelectedFacultySemesterId("");
+                      setSelectedFacultySectionId("");
+                      setFacultyIaSelectedSubjectId("");
+                      setFacultyIaSelectedAssessmentId("");
+                      setFacultyIaMarksheet([]);
+                    }}
+                  >
+                    <option value="">-- Choose Course --</option>
+                    {Array.from(new Set(myAllocations.map(a => a.course))).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Semester Filter */}
+                <div className="space-y-1">
+                  <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Semester</Label>
+                  <select
+                    className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
+                    disabled={!selectedFacultyCourse}
+                    value={selectedFacultySemesterId}
+                    onChange={(e) => {
+                      setSelectedFacultySemesterId(e.target.value);
+                      setSelectedFacultySectionId("");
+                      setFacultyIaSelectedSubjectId("");
+                      setFacultyIaSelectedAssessmentId("");
+                      setFacultyIaMarksheet([]);
+                    }}
+                  >
+                    <option value="">-- Choose Semester --</option>
+                    {availableSemesters.map(sem => (
+                      <option key={sem._id} value={sem._id}>{sem.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Section Filter */}
+                <div className="space-y-1">
+                  <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Class / Section</Label>
+                  <select
+                    className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
+                    disabled={!selectedFacultySemesterId}
+                    value={selectedFacultySectionId}
+                    onChange={(e) => {
+                      setSelectedFacultySectionId(e.target.value);
+                      setFacultyIaSelectedSubjectId("");
+                      setFacultyIaSelectedAssessmentId("");
+                      setFacultyIaMarksheet([]);
+                    }}
+                  >
+                    <option value="">-- Semester-Wide --</option>
+                    {availableSections.filter(Boolean).map(sec => (
+                      <option key={sec._id} value={sec._id}>{sec.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Subject Filter */}
+                <div className="space-y-1">
+                  <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Subject</Label>
+                  <select
+                    className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
+                    disabled={!selectedFacultySemesterId}
+                    value={facultyIaSelectedSubjectId}
+                    onChange={(e) => {
+                      setFacultyIaSelectedSubjectId(e.target.value);
+                      setFacultyIaSelectedAssessmentId("");
+                      setFacultyIaMarksheet([]);
+                    }}
+                  >
+                    <option value="">-- Choose Subject --</option>
+                    {availableSubjects.map(sub => (
+                      <option key={sub._id} value={sub._id}>{sub.subjectId} - {sub.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Assessment Filter */}
+                <div className="space-y-1">
+                  <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose IA Session</Label>
+                  <select
+                    className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
+                    disabled={!facultyIaSelectedSubjectId}
+                    value={facultyIaSelectedAssessmentId}
+                    onChange={(e) => {
+                      setFacultyIaSelectedAssessmentId(e.target.value);
+                      setFacultyIaSelectedSectionId(selectedFacultySectionId || "all");
+                    }}
+                  >
+                    <option value="">-- Choose IA --</option>
+                    {facultyIaAssessmentsList
+                      .filter(ia => ia.semester?._id === selectedFacultySemesterId)
+                      .map(ia => (
+                        <option key={ia._id} value={ia._id}>{ia.title} (Max Marks: {ia.maxMarks})</option>
+                      ))}
+                  </select>
+                </div>
+              </CardContent>
+            </Card>
+
+            {!facultyIaSelectedAssessmentId ? (
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                Select Course filters, Subject and Internal Assessment test to display student mark registry sheet.
+              </div>
+            ) : facultyIaMarksheetLoading ? (
+              <div className="flex flex-col items-center justify-center p-24 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 space-y-4">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 dark:border-zinc-850 border-t-zinc-850 dark:border-t-zinc-200" />
+                <span className="text-zinc-500 text-xs font-semibold animate-pulse">Loading student mark registry sheet...</span>
+              </div>
+            ) : facultyIaMarksheet.length === 0 ? (
+              <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                No students found matching this configuration.
+              </div>
+            ) : (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                {/* Max Marks settings bar */}
+                <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-900/40 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 text-xs">
+                  <div className="flex items-center space-x-2">
+                    <Label className="text-zinc-700 dark:text-zinc-300 font-semibold text-xs shrink-0">Subject Maximum Marks *</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={facultyIaMaxMarks}
+                      onChange={(e) => setFacultyIaMaxMarks(Number(e.target.value))}
+                      className="h-8 w-20 text-center font-mono font-bold bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                    />
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="text-[11px] text-zinc-500 italic">
+                    Specify the evaluation's maximum score. Entered student marks will be validated against this value.
+                  </div>
+                </div>
+
+                {/* Marksheet table */}
+                <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
+                        <th className="py-2.5 px-4 text-center w-16 border-r border-zinc-200 dark:border-zinc-850">Sl. No.</th>
+                        <th className="py-2.5 px-4 border-r border-zinc-200 dark:border-zinc-850">Admission No</th>
+                        <th className="py-2.5 px-4 border-r border-zinc-200 dark:border-zinc-850">Register Number</th>
+                        <th className="py-2.5 px-4 border-r border-zinc-200 dark:border-zinc-850">Student Name</th>
+                        <th className="py-2.5 px-4 border-r border-zinc-200 dark:border-zinc-850 text-center w-40">Enter Marks (Max: {maxMarks})</th>
+                        <th className="py-2.5 px-4 text-center w-36">Attendance Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {facultyIaMarksheet.map((row, idx) => {
+                        const isAbs = row.status === "absent";
+                        return (
+                          <tr key={row.student._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/10">
+                            <td className="py-2.5 px-4 text-center border-r border-zinc-100 dark:border-zinc-900 text-zinc-400 font-medium">{idx + 1}</td>
+                            <td className="py-2.5 px-4 border-r border-zinc-100 dark:border-zinc-900 font-mono font-semibold text-zinc-500">{row.student.admissionNumber || 'N/A'}</td>
+                            <td className="py-2.5 px-4 border-r border-zinc-100 dark:border-zinc-900 font-mono font-bold">{row.student.studentId || '—'}</td>
+                            <td className="py-2.5 px-4 border-r border-zinc-100 dark:border-zinc-900 font-semibold">{row.student.fullName}</td>
+                            <td className="py-2.5 px-4 border-r border-zinc-100 dark:border-zinc-900 text-center">
+                              <div className="flex items-center justify-center space-x-2">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={maxMarks}
+                                  disabled={isAbs}
+                                  value={isAbs ? "0" : row.marksObtained}
+                                  onChange={(e) => {
+                                    let val = Number(e.target.value);
+                                    if (val > maxMarks) val = maxMarks;
+                                    if (val < 0) val = 0;
+                                    
+                                    const updated = [...facultyIaMarksheet];
+                                    updated[idx].marksObtained = val;
+                                    setFacultyIaMarksheet(updated);
+                                  }}
+                                  className="h-8 w-20 text-center text-xs font-mono font-bold bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 disabled:bg-zinc-100 dark:disabled:bg-zinc-900 disabled:opacity-50"
+                                />
+                                <span className="text-zinc-400 font-medium">/ {maxMarks}</span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-4 text-center">
+                              <Button
+                                type="button"
+                                variant={isAbs ? "destructive" : "outline"}
+                                size="sm"
+                                onClick={() => {
+                                  const updated = [...facultyIaMarksheet];
+                                  if (isAbs) {
+                                    updated[idx].status = "present";
+                                  } else {
+                                    updated[idx].status = "absent";
+                                    updated[idx].marksObtained = 0;
+                                  }
+                                  setFacultyIaMarksheet(updated);
+                                }}
+                                className={`h-7 px-3 text-[10px] font-bold ${
+                                  isAbs
+                                    ? "bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20"
+                                    : "border-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                                }`}
+                              >
+                                {isAbs ? "Absent" : "Present"}
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Submit button bar */}
+                <div className="flex justify-end pt-2">
+                  <Button
+                    type="button"
+                    disabled={facultyIaSaving}
+                    onClick={submitFacultyIaMarks}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 text-xs h-9 px-6 flex items-center space-x-2 font-semibold shadow-sm rounded-md"
+                  >
+                    {facultyIaSaving ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        <span>Saving Marks...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Save Assessment Marks</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         );
       } else if (window.location.pathname.endsWith("/assignments")) {
         const availableSemesters = myAllocations
@@ -3809,7 +7666,7 @@ export const DashboardHome = () => {
                       <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">
                         Assignments Submission Ledger
                       </CardTitle>
-                      <CardDescription className="text-[10px] text-zinc-550 dark:text-zinc-500 mt-1">
+                      <CardDescription className="text-[10px] text-zinc-500 dark:text-zinc-500 mt-1">
                         Create coursework tasks and track student submissions.
                       </CardDescription>
                     </div>
@@ -3894,7 +7751,7 @@ export const DashboardHome = () => {
                             <span className="text-zinc-500 text-xs font-semibold animate-pulse">Loading assignments roster...</span>
                           </div>
                         ) : assignments.length === 0 ? (
-                          <div className="p-6 text-center text-zinc-505 italic text-xs">
+                          <div className="p-6 text-center text-zinc-500 italic text-xs">
                             No assignments created yet for this class subject. Click "Create Assignment" to add one.
                           </div>
                         ) : (
@@ -3969,7 +7826,7 @@ export const DashboardHome = () => {
                                             Delete
                                           </button>
                                         </div>
-                                        <p className="text-[10px] text-zinc-550 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
+                                        <p className="text-[10px] text-zinc-500 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
                                       </div>
                                       <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between text-[9px] font-bold text-zinc-500">
                                         <span>Due: {new Date(assign.dueDate).toLocaleDateString()}</span>
@@ -4054,7 +7911,7 @@ export const DashboardHome = () => {
                                 <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
                                   <table className="w-full text-left border-collapse text-xs">
                                     <thead>
-                                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
+                                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
                                         <th className="py-2.5 px-3">Roll Number</th>
                                         <th className="py-2.5 px-3">Student Name</th>
                                         <th className="py-2.5 px-3">Language</th>
@@ -4064,7 +7921,7 @@ export const DashboardHome = () => {
                                     <tbody>
                                       {getFilteredAndSortedSubmissions().length === 0 ? (
                                         <tr>
-                                          <td colSpan={4} className="py-8 text-center text-zinc-500 italic text-xs">
+                                          <td colSpan={5} className="py-8 text-center text-zinc-500 italic text-xs">
                                             No student submissions match search/filter criteria.
                                           </td>
                                         </tr>
@@ -4334,7 +8191,7 @@ export const DashboardHome = () => {
                       <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">
                         Roster List {attendanceIsMarked && <span className="ml-2 text-[10px] bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 px-1.5 py-0.5 rounded font-bold uppercase">Marked</span>}
                       </CardTitle>
-                      <CardDescription className="text-[10px] text-zinc-550 dark:text-zinc-500 mt-1">
+                      <CardDescription className="text-[10px] text-zinc-500 dark:text-zinc-500 mt-1">
                         Toggle each student status or use bulk actions, then click save.
                       </CardDescription>
                     </div>
@@ -4442,7 +8299,8 @@ export const DashboardHome = () => {
                             <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg">
                               <table className="w-full text-left border-collapse text-xs">
                                 <thead>
-                                  <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
+                                  <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
+                                    <th className="py-2.5 px-3">Admission No</th>
                                     <th className="py-2.5 px-3">Roll Number</th>
                                     <th className="py-2.5 px-3">Student Name</th>
                                     <th className="py-2.5 px-3">Language (Sub ID)</th>
@@ -4452,22 +8310,23 @@ export const DashboardHome = () => {
                                 <tbody>
                                   {attendanceStudents.filter(s => 
                                     s.fullName.toLowerCase().includes(facultyMarkSearch.toLowerCase()) ||
-                                    s.studentId.toLowerCase().includes(facultyMarkSearch.toLowerCase())
+                                    (s.studentId || "").toLowerCase().includes(facultyMarkSearch.toLowerCase())
                                   ).length === 0 ? (
                                     <tr>
-                                      <td colSpan={4} className="py-6 text-center text-zinc-500 italic">
+                                      <td colSpan={5} className="py-6 text-center text-zinc-500 italic">
                                         No students matching "{facultyMarkSearch}" found.
                                       </td>
                                     </tr>
                                   ) : (
                                     attendanceStudents.filter(s => 
                                       s.fullName.toLowerCase().includes(facultyMarkSearch.toLowerCase()) ||
-                                      s.studentId.toLowerCase().includes(facultyMarkSearch.toLowerCase())
+                                      (s.studentId || "").toLowerCase().includes(facultyMarkSearch.toLowerCase())
                                     ).map((student) => (
                                       <tr key={student._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
-                                        <td className="py-2 px-3 font-mono font-bold">{student.studentId}</td>
+                                        <td className="py-2 px-3 font-mono font-semibold text-zinc-500">{student.admissionNumber || 'N/A'}</td>
+                                        <td className="py-2 px-3 font-mono font-bold">{student.studentId || '—'}</td>
                                         <td className="py-2 px-3">{student.fullName}</td>
-                                        <td className="py-2 px-3 font-bold uppercase text-[10px] text-zinc-550 dark:text-zinc-450">{student.language}</td>
+                                        <td className="py-2 px-3 font-bold uppercase text-[10px] text-zinc-500 dark:text-zinc-450">{student.language}</td>
                                         <td className="py-2 px-3 text-right">
                                           <div className="inline-flex rounded-md shadow-sm">
                                             <button
@@ -4534,7 +8393,7 @@ export const DashboardHome = () => {
                       <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">
                         Consolidated Attendance Report
                       </CardTitle>
-                      <CardDescription className="text-[10px] text-zinc-550 dark:text-zinc-500 mt-1">
+                      <CardDescription className="text-[10px] text-zinc-500 dark:text-zinc-500 mt-1">
                         Summary of student presence, total classes held, and overall attendance percentage.
                       </CardDescription>
                     </div>
@@ -4579,7 +8438,7 @@ export const DashboardHome = () => {
                         <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg">
                           <table className="w-full text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
+                              <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
                                 <th className="py-2.5 px-3">Roll Number</th>
                                 <th className="py-2.5 px-3">Student Name</th>
                                 <th className="py-2.5 px-3">Language Choice</th>
@@ -4591,7 +8450,7 @@ export const DashboardHome = () => {
                             <tbody>
                               {consolidatedData.filter(student => 
                                 student.fullName.toLowerCase().includes(facultyConsolidatedSearch.toLowerCase()) ||
-                                student.studentId.toLowerCase().includes(facultyConsolidatedSearch.toLowerCase())
+                                (student.studentId || "").toLowerCase().includes(facultyConsolidatedSearch.toLowerCase())
                               ).length === 0 ? (
                                 <tr>
                                   <td colSpan={6} className="py-6 text-center text-zinc-500 italic">
@@ -4601,7 +8460,7 @@ export const DashboardHome = () => {
                               ) : (
                                 consolidatedData.filter(student => 
                                   student.fullName.toLowerCase().includes(facultyConsolidatedSearch.toLowerCase()) ||
-                                  student.studentId.toLowerCase().includes(facultyConsolidatedSearch.toLowerCase())
+                                  (student.studentId || "").toLowerCase().includes(facultyConsolidatedSearch.toLowerCase())
                                 ).map((student) => {
                                   const isLowAttendance = student.percentage < 75;
                                   return (
@@ -4610,7 +8469,7 @@ export const DashboardHome = () => {
                                       <td className="py-2.5 px-3 font-semibold">{student.fullName}</td>
                                       <td className="py-2.5 px-3 uppercase text-[10px] text-zinc-500 font-bold">{student.language || "N/A"}</td>
                                       <td className="py-2.5 px-3 text-center text-emerald-600 font-bold">{student.presentCount}</td>
-                                      <td className="py-2.5 px-3 text-center text-zinc-550 dark:text-zinc-400 font-bold">{student.totalClasses}</td>
+                                      <td className="py-2.5 px-3 text-center text-zinc-500 dark:text-zinc-400 font-bold">{student.totalClasses}</td>
                                       <td className="py-2.5 px-3 text-right">
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                           isLowAttendance
@@ -4639,7 +8498,7 @@ export const DashboardHome = () => {
                     <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">
                       Attendance Register History Logs
                     </CardTitle>
-                    <CardDescription className="text-[10px] text-zinc-550 dark:text-zinc-500 mt-1">
+                    <CardDescription className="text-[10px] text-zinc-500 dark:text-zinc-500 mt-1">
                       Chronological list of all marked daily attendance registers.
                     </CardDescription>
                   </CardHeader>
@@ -4673,7 +8532,7 @@ export const DashboardHome = () => {
                           const matchesDate = dateStr.includes(query);
                           const matchesStudent = log.records.some(r => 
                             r.fullName.toLowerCase().includes(query) ||
-                            r.studentId.toLowerCase().includes(query)
+                            (r.studentId || "").toLowerCase().includes(query)
                           );
                           return matchesDate || matchesStudent;
                         }).length === 0 ? (
@@ -4687,7 +8546,7 @@ export const DashboardHome = () => {
                             const matchesDate = dateStr.includes(query);
                             const matchesStudent = log.records.some(r => 
                               r.fullName.toLowerCase().includes(query) ||
-                              r.studentId.toLowerCase().includes(query)
+                              (r.studentId || "").toLowerCase().includes(query)
                             );
                             return matchesDate || matchesStudent;
                           }).map((log) => {
@@ -4695,7 +8554,7 @@ export const DashboardHome = () => {
                             const matchingRecords = log.records.filter(r => {
                               if (!facultyHistorySearch) return true;
                               const query = facultyHistorySearch.toLowerCase();
-                              return r.fullName.toLowerCase().includes(query) || r.studentId.toLowerCase().includes(query);
+                              return r.fullName.toLowerCase().includes(query) || (r.studentId || "").toLowerCase().includes(query);
                             });
                             return (
                               <div
@@ -4711,12 +8570,17 @@ export const DashboardHome = () => {
                                     <span className="font-bold text-zinc-800 dark:text-zinc-200">
                                       {new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
                                     </span>
-                                    <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-550 dark:text-zinc-400 px-1.5 py-0.5 rounded font-mono font-bold">
+                                    <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 px-1.5 py-0.5 rounded font-mono font-bold">
                                       {log.total} Students
                                     </span>
                                   </div>
                                   <div className="flex items-center space-x-4">
                                     <div className="flex space-x-2 text-[10px] font-bold">
+                                      {log.updatedByHOD && (
+                                        <span className="text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded text-[9px] font-bold">
+                                          Updated by HOD
+                                        </span>
+                                      )}
                                       <span className="text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
                                         {log.present} Present
                                       </span>
@@ -4730,10 +8594,15 @@ export const DashboardHome = () => {
 
                                 {/* Roster details for this date */}
                                 {isExpanded && (
-                                  <div className="p-3 border-t border-zinc-150 dark:border-zinc-850 bg-white dark:bg-zinc-955 space-y-3 animate-in slide-in-from-top-1 duration-150">
+                                  <div className="p-3 border-t border-zinc-150 dark:border-zinc-850 bg-white dark:bg-zinc-900 space-y-3 animate-in slide-in-from-top-1 duration-150">
+                                    {log.updatedByHOD && (
+                                      <div className="bg-amber-500/10 border border-amber-500/20 rounded p-2 text-[10px] text-amber-700 dark:text-amber-450 font-medium">
+                                        Notice: This register has been updated or overridden by the HOD.
+                                      </div>
+                                    )}
                                     <div className="flex items-center justify-between text-[10px] text-zinc-500 font-semibold">
                                       <span>Student List Details</span>
-                                      {log.isEditable ? (
+                                      {log.isEditable && !log.updatedByHOD ? (
                                         <button
                                           type="button"
                                           onClick={() => {
@@ -4745,14 +8614,14 @@ export const DashboardHome = () => {
                                           Edit this register
                                         </button>
                                       ) : (
-                                        <span className="text-zinc-400 dark:text-zinc-550 flex items-center space-x-1 cursor-default font-normal">
+                                        <span className="text-zinc-400 dark:text-zinc-500 flex items-center space-x-1 cursor-default font-normal">
                                           <Lock className="h-2.5 w-2.5" />
-                                          <span>Locked for editing</span>
+                                          <span>{log.updatedByHOD ? "Locked (Updated by HOD)" : "Locked for editing"}</span>
                                         </span>
                                       )}
                                     </div>
                                     {matchingRecords.length === 0 ? (
-                                      <div className="p-2 text-center text-zinc-500 italic text-[11px]">
+                          <div className="p-2 text-center text-zinc-500 italic text-[11px]">
                                         No student records match search query in this register.
                                       </div>
                                     ) : (
@@ -4762,13 +8631,18 @@ export const DashboardHome = () => {
                                             key={rIdx}
                                             className={`flex items-center justify-between p-2 rounded-md text-[11px] border ${
                                               r.status === 'present'
-                                                ? 'border-emerald-100 dark:border-emerald-950/20 bg-emerald-50/20 text-emerald-800 dark:text-emerald-450'
-                                                : 'border-red-100 dark:border-red-955/20 bg-red-50/20 text-red-800 dark:text-red-405'
+                                                ? 'border-emerald-200 dark:border-emerald-900/30 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300'
+                                                : 'border-red-200 dark:border-red-900/30 bg-red-50/50 dark:bg-red-950/20 text-red-800 dark:text-red-300'
                                             }`}
                                           >
-                                            <div className="font-medium truncate pr-2">
-                                              <span className="font-mono font-bold mr-1.5">{r.studentId}</span>
-                                              <span>{r.fullName}</span>
+                                            <div className="font-medium truncate pr-2 flex items-center space-x-1.5">
+                                              <span className="font-mono font-bold">{r.studentId}</span>
+                                              <span className="truncate">{r.fullName}</span>
+                                              {r.updatedByHOD && (
+                                                <span className="text-[7px] bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 px-1 rounded-sm font-bold uppercase shrink-0">
+                                                  HOD
+                                                </span>
+                                              )}
                                             </div>
                                             <span className="font-bold text-[9px] uppercase tracking-wider">
                                               {r.status}
@@ -4797,7 +8671,7 @@ export const DashboardHome = () => {
                       <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">
                         Assignments Submission Ledger
                       </CardTitle>
-                      <CardDescription className="text-[10px] text-zinc-550 dark:text-zinc-500 mt-1">
+                      <CardDescription className="text-[10px] text-zinc-500 dark:text-zinc-500 mt-1">
                         Create coursework tasks and track student submissions.
                       </CardDescription>
                     </div>
@@ -4882,7 +8756,7 @@ export const DashboardHome = () => {
                             <span className="text-zinc-500 text-xs font-semibold animate-pulse">Loading assignments roster...</span>
                           </div>
                         ) : assignments.length === 0 ? (
-                          <div className="p-6 text-center text-zinc-505 italic text-xs">
+                          <div className="p-6 text-center text-zinc-500 italic text-xs">
                             No assignments created yet for this class subject. Click "Create Assignment" to add one.
                           </div>
                         ) : (
@@ -4957,7 +8831,7 @@ export const DashboardHome = () => {
                                             Delete
                                           </button>
                                         </div>
-                                        <p className="text-[10px] text-zinc-550 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
+                                        <p className="text-[10px] text-zinc-500 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
                                       </div>
                                       <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between text-[9px] font-bold text-zinc-500">
                                         <span>Due: {new Date(assign.dueDate).toLocaleDateString()}</span>
@@ -4979,7 +8853,7 @@ export const DashboardHome = () => {
                                     <h4 className="text-xs font-bold text-zinc-900 dark:text-white">
                                       Submission Register: {selectedAssignment.title}
                                     </h4>
-                                    <p className="text-[10px] text-zinc-550 dark:text-zinc-500 mt-1">
+                                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500 mt-1">
                                       Click toggle buttons to mark submission status.
                                     </p>
                                   </div>
@@ -5042,7 +8916,7 @@ export const DashboardHome = () => {
                                 <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
                                   <table className="w-full text-left border-collapse text-xs">
                                     <thead>
-                                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-505 dark:text-zinc-400 font-semibold">
+                                      <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
                                         <th className="py-2.5 px-3">Roll Number</th>
                                         <th className="py-2.5 px-3">Student Name</th>
                                         <th className="py-2.5 px-3">Language</th>
@@ -5052,7 +8926,7 @@ export const DashboardHome = () => {
                                     <tbody>
                                       {getFilteredAndSortedSubmissions().length === 0 ? (
                                         <tr>
-                                          <td colSpan={4} className="py-8 text-center text-zinc-500 italic text-xs">
+                                          <td colSpan={5} className="py-8 text-center text-zinc-500 italic text-xs">
                                             No student submissions match search/filter criteria.
                                           </td>
                                         </tr>
@@ -5101,7 +8975,7 @@ export const DashboardHome = () => {
             <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
               <CardHeader>
                 <CardTitle className="text-zinc-900 dark:text-white text-base">Module Workspace</CardTitle>
-                <CardDescription className="text-zinc-505 text-xs">
+                <CardDescription className="text-zinc-500 text-xs">
                   Review metrics and manage actions relative to your role permissions.
                 </CardDescription>
               </CardHeader>
@@ -5127,7 +9001,8 @@ export const DashboardHome = () => {
             Welcome back, {user.fullName}
           </h2>
           <p className="text-xs text-zinc-500 font-medium">
-            DMS Dashboard — {user.role === "Admin" ? "System Administration" : `Department: ${user.department || "N/A"} | College: ${user.college || "N/A"}`}
+            DMS Dashboard 
+ {user.role === "Admin" ? "System Administration" : `Department: ${user.department || "N/A"} | College: ${user.college || "N/A"}`}
           </p>
         </div>
         {user.role !== "Faculty" && user.role !== "HOD" && (
@@ -5180,7 +9055,7 @@ export const DashboardHome = () => {
                     <ChevronDown className="h-4 w-4 rotate-90" />
                   </div>
                 </div>
-                <CardDescription className="text-zinc-505 text-xs mt-1">
+                <CardDescription className="text-zinc-500 text-xs mt-1">
                   System events and access logs.
                 </CardDescription>
               </CardHeader>
@@ -5193,12 +9068,12 @@ export const DashboardHome = () => {
                   </div>
                   <div className="space-y-1">
                     <div className="absolute left-[-4.5px] mt-1 h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-800" />
-                    <p className="text-zinc-505 dark:text-zinc-400 font-medium">Database connection secure</p>
+                    <p className="text-zinc-500 dark:text-zinc-400 font-medium">Database connection secure</p>
                     <p className="text-[10px] text-zinc-500">Mongoose client connected to localhost</p>
                   </div>
                   <div className="space-y-1">
                     <div className="absolute left-[-4.5px] mt-1 h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-800" />
-                    <p className="text-zinc-505 dark:text-zinc-400 font-medium">System seeder executed</p>
+                    <p className="text-zinc-500 dark:text-zinc-400 font-medium">System seeder executed</p>
                     <p className="text-[10px] text-zinc-500 font-normal">Initialized default Admin credentials (ADM001)</p>
                   </div>
                 </div>
@@ -5389,14 +9264,14 @@ export const DashboardHome = () => {
                     <tbody>
                       {courses.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="py-4 text-center text-zinc-500">
+                          <td colSpan={5} className="py-4 text-center text-zinc-500">
                             No courses or departments created yet.
                           </td>
                         </tr>
                       ) : (
                         courses.map((c) => (
                           <tr key={c.courseId} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
-                            <td className="py-2 pr-4 font-mono text-zinc-505 dark:text-zinc-400">{c.courseId}</td>
+                            <td className="py-2 pr-4 font-mono text-zinc-500 dark:text-zinc-400">{c.courseId}</td>
                             <td className="py-2 px-4">{c.courseName}</td>
                             <td className="py-2 px-4">{c.college}</td>
                             <td className="py-2 pl-4 text-right space-x-2">
@@ -5404,7 +9279,7 @@ export const DashboardHome = () => {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-zinc-505 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                                className="h-7 w-7 text-zinc-500 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900"
                                 onClick={() => setEditingCourse(c)}
                               >
                                 <Edit className="h-3.5 w-3.5" />
@@ -5413,7 +9288,7 @@ export const DashboardHome = () => {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-zinc-505 dark:text-zinc-400 hover:text-red-655 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-955/20"
+                                className="h-7 w-7 text-zinc-500 dark:text-zinc-400 hover:text-red-655 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-955/20"
                                 onClick={() => {
                                   setDeletingCourse(c);
                                   setDeleteConfirmText("");
@@ -5458,14 +9333,14 @@ export const DashboardHome = () => {
                       ) : (
                         colleges.map((col) => (
                           <tr key={col.collegeId} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
-                            <td className="py-2 pr-4 font-mono text-zinc-505 dark:text-zinc-400">{col.collegeId}</td>
+                            <td className="py-2 pr-4 font-mono text-zinc-500 dark:text-zinc-400">{col.collegeId}</td>
                             <td className="py-2 px-4">{col.collegeName}</td>
                             <td className="py-2 pl-4 text-right space-x-2">
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-zinc-505 dark:text-zinc-400 hover:text-zinc-955 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                                className="h-7 w-7 text-zinc-500 dark:text-zinc-400 hover:text-zinc-955 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900"
                                 onClick={() => setEditingCollege(col)}
                               >
                                 <Edit className="h-3.5 w-3.5" />
@@ -5474,7 +9349,7 @@ export const DashboardHome = () => {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-zinc-505 dark:text-zinc-400 hover:text-red-655 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-955/20"
+                                className="h-7 w-7 text-zinc-500 dark:text-zinc-400 hover:text-red-655 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-955/20"
                                 onClick={() => {
                                   setDeletingCollege(col);
                                   setDeleteConfirmText("");
@@ -5889,5 +9764,4 @@ export const DashboardHome = () => {
       )}
     </div>
   );
-};
-
+}

@@ -4,33 +4,33 @@
 
 @layer base {
   :root, .dark {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 9%;
+    --background: 222.2 84% 4.9%; /* #020617 (slate-955 / slate-950) */
+    --foreground: 210 40% 98%; /* #f8fafc (slate-50 / white) */
 
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 9%;
+    --card: 222.2 47% 11%; /* #0f172a (slate-900) */
+    --card-foreground: 210 40% 98%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 9%;
+    --popover: 222.2 47% 11%; /* #0f172a (slate-900) */
+    --popover-foreground: 210 40% 98%;
 
-    --primary: 0 72% 51%; /* Red #dc2626 */
-    --primary-foreground: 0 0% 100%;
+    --primary: 215 25% 27%; /* #334155 (slate-700) */
+    --primary-foreground: 0 0% 100%; /* #ffffff (white) */
 
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 72% 51%;
+    --secondary: 217.2 32.6% 17.5%; /* #1e293b (slate-800) */
+    --secondary-foreground: 210 40% 98%;
 
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
+    --muted: 217.2 32.6% 17.5%; /* #1e293b (slate-800) */
+    --muted-foreground: 215 20.2% 65.1%; /* #94a3b8 (slate-400) */
 
-    --accent: 0 100% 97.5%; /* Light rose accent */
-    --accent-foreground: 0 72% 51%;
+    --accent: 217.2 32.6% 17.5%; /* #1e293b (slate-800) */
+    --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
 
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 72% 51%;
+    --border: 217.2 32.6% 17.5%; /* #1e293b (slate-800) */
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
 
     --radius: 0.6rem;
   }
@@ -52,16 +52,86 @@
 
 /* Premium Medium Thick Borders for all Tables */
 table {
-  border: 2px solid #e4e4e7 !important;
+  border: 2px solid hsl(var(--border)) !important;
   border-collapse: collapse !important;
 }
 .dark table {
-  border: 2px solid #27272a !important;
+  border: 2px solid hsl(var(--border)) !important;
 }
 table th, table td {
-  border: 1.5px solid #e4e4e7 !important;
+  border: 1.5px solid hsl(var(--border)) !important;
 }
 .dark table th, .dark table td {
-  border: 1.5px solid #27272a !important;
+  border: 1.5px solid hsl(var(--border)) !important;
 }
+
+/* Sidebar Custom Styling (Dark Slate) */
+aside {
+  background-color: #0f172a !important; /* slate-900 */
+  border-right: 1px solid #1e293b !important; /* slate-800 */
+}
+aside span, aside div {
+  color: #f8fafc;
+}
+aside a {
+  color: #94a3b8 !important; /* slate-400 */
+}
+aside a:hover {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+aside a[class*="bg-zinc-100"] {
+  background-color: #1e293b !important; /* slate-800 active bg */
+  color: #ffffff !important;
+  border-color: #334155 !important; /* slate-700 active border */
+}
+aside a[class*="bg-zinc-100"] * {
+  color: #ffffff !important;
+}
+aside button {
+  color: #94a3b8 !important;
+}
+aside button:hover {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+
+/* Excel Table selection styling */
+.excel-table {
+  user-select: none; /* Prevent text selection */
+}
+.excel-table td.selected-cell {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+  outline: 2px solid rgba(59, 130, 246, 0.85) !important;
+  outline-offset: -2px;
+}
+.excel-table th.selected-cell {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  outline: 2px solid rgba(59, 130, 246, 0.65) !important;
+  outline-offset: -2px;
+}
+
+/* Premium Scrollable Table Container & Sticky Headers */
+.overflow-x-auto {
+  max-height: 580px;
+  overflow-y: auto;
+  position: relative;
+  /* Custom scrollbar styling for a cleaner look */
+  scrollbar-width: thin;
+}
+.overflow-x-auto thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  /* Use solid bg colors corresponding to light/dark modes to prevent row overlay bleed-through */
+  background-color: #f9fafb !important; /* light mode fallback */
+}
+.dark .overflow-x-auto thead th {
+  background-color: #09090b !important; /* dark mode fallback */
+}
+/* For tables with dynamic double header structures (rowSpan) */
+.overflow-x-auto thead tr:nth-child(2) th {
+  top: 32px; /* offset top equal to the height of the first header row */
+}
+
 

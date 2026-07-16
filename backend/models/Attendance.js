@@ -11,6 +11,10 @@ const attendanceRecordSchema = new mongoose.Schema({
     enum: ['present', 'absent'],
     required: true,
   },
+  updatedByHOD: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const attendanceSchema = new mongoose.Schema(
@@ -40,6 +44,10 @@ const attendanceSchema = new mongoose.Schema(
       required: [true, 'Attendance date is required'],
     },
     records: [attendanceRecordSchema],
+    updatedByHOD: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

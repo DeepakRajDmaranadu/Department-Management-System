@@ -214,3 +214,76 @@ exports.getBatchLanguageSubjects = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Update a subject
+exports.updateSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subjectId, name, subjectType } = req.body;
+
+    if (!subjectId || !name) {
+      return res.status(400).json({ success: false, message: 'Subject ID and Name are required' });
+    }
+
+    const cleanType = subjectType ? subjectType.toLowerCase().trim() : 'regular';
+    if (!['regular', 'language'].includes(cleanType)) {
+      return res.status(400).json({ success: false, message: 'Subject type must be either regular or language' });
+    }
+
+    const subject = await Subject.findById(id);
+    if (!subject) {
+      return res.status(404).json({ success: false, message: 'Subject not found' });
+    }
+
+    subject.subjectId = subjectId.toUpperCase();
+    subject.name = name;
+    subject.subjectType = cleanType;
+
+    await subject.save();
+    return res.status(200).json({ success: true, data: subject });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ success: false, message: 'Subject ID already exists in this semester' });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Update an allocation
+exports.updateAllocation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subjectId, sectionId, facultyId } = req.body;
+
+    if (!subjectId || !facultyId) {
+      return res.status(400).json({ success: false, message: 'Subject and Faculty are required' });
+    }
+
+    const subject = await Subject.findById(subjectId);
+    if (!subject) {
+      return res.status(404).json({ success: false, message: 'Subject not found' });
+    }
+
+    const faculty = await User.findOne({ _id: facultyId, role: 'Faculty' });
+    if (!faculty) {
+      return res.status(404).json({ success: false, message: 'Faculty member not found' });
+    }
+
+    const allocation = await SubjectAllocation.findById(id);
+    if (!allocation) {
+      return res.status(404).json({ success: false, message: 'Allocation not found' });
+    }
+
+    allocation.subject = subjectId;
+    allocation.section = sectionId || null;
+    allocation.faculty = facultyId;
+
+    await allocation.save();
+    return res.status(200).json({ success: true, data: allocation });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ success: false, message: 'This subject is already allocated to a faculty member for this section/semester' });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

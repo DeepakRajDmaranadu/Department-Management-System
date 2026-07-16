@@ -4,8 +4,12 @@ const studentSchema = new mongoose.Schema(
   {
     studentId: {
       type: String,
-      required: [true, 'Student ID (Roll Number) is required'],
-      unique: true,
+      trim: true,
+      uppercase: true,
+    },
+    admissionNumber: {
+      type: String,
+      required: [true, 'Admission number is required'],
       trim: true,
       uppercase: true,
     },

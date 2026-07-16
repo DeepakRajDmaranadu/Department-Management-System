@@ -99,10 +99,10 @@ exports.deleteBatch = async (req, res) => {
 exports.addStudent = async (req, res) => {
   try {
     const { batchId } = req.params;
-    const { studentId, fullName, email, language } = req.body;
+    const { admissionNumber, studentId, fullName, email, language } = req.body;
 
-    if (!studentId || !fullName || !email || !language) {
-      return res.status(400).json({ success: false, message: 'All student fields are required including language (Subject ID)' });
+    if (!admissionNumber || !fullName || !email || !language) {
+      return res.status(400).json({ success: false, message: 'Admission number, Name, Email, and Language are required' });
     }
 
     const batch = await Batch.findById(batchId);
@@ -126,14 +126,25 @@ exports.addStudent = async (req, res) => {
       return res.status(400).json({ success: false, message: `Language Subject ID "${language}" is not registered in this batch. Please register the language subject first.` });
     }
 
-    // Check duplicate student ID globally
-    const existing = await Student.findOne({ studentId: studentId.toUpperCase() });
-    if (existing) {
-      return res.status(400).json({ success: false, message: `Student ID ${studentId} is already registered` });
+    // Check duplicate student ID globally (only if provided)
+    let cleanStudentId = undefined;
+    if (studentId && studentId.trim()) {
+      cleanStudentId = studentId.toUpperCase().trim();
+      const existing = await Student.findOne({ studentId: cleanStudentId });
+      if (existing) {
+        return res.status(400).json({ success: false, message: `Student ID ${studentId} is already registered` });
+      }
+    }
+
+    // Check duplicate admission number globally
+    const existingAdmission = await Student.findOne({ admissionNumber: admissionNumber.toUpperCase().trim() });
+    if (existingAdmission) {
+      return res.status(400).json({ success: false, message: `Admission Number ${admissionNumber} is already registered` });
     }
 
     const student = new Student({
-      studentId: studentId.toUpperCase(),
+      admissionNumber: admissionNumber.toUpperCase().trim(),
+      studentId: cleanStudentId,
       fullName,
       email,
       batch: batchId,
@@ -153,7 +164,7 @@ exports.addStudent = async (req, res) => {
 exports.addStudentsBulk = async (req, res) => {
   try {
     const { batchId } = req.params;
-    const { students } = req.body; // Array of { studentId, fullName, email, language }
+    const { students } = req.body; // Array of { admissionNumber, studentId, fullName, email, language }
 
     if (!students || !Array.isArray(students) || students.length === 0) {
       return res.status(400).json({ success: false, message: 'Valid students array is required' });
@@ -164,12 +175,21 @@ exports.addStudentsBulk = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Batch not found' });
     }
 
-    // Validate duplicates in database and inside the input array
-    const studentIds = students.map(s => s.studentId.toUpperCase());
-    const duplicates = await Student.find({ studentId: { $in: studentIds } });
-    if (duplicates.length > 0) {
-      const dupList = duplicates.map(d => d.studentId).join(', ');
-      return res.status(400).json({ success: false, message: `The following Student IDs are already registered: ${dupList}` });
+    // Validate duplicates in database and inside the input array for studentId (only where provided)
+    const studentIds = students.map(s => (s.studentId && s.studentId.trim()) ? s.studentId.toUpperCase().trim() : "").filter(Boolean);
+    if (studentIds.length > 0) {
+      const duplicates = await Student.find({ studentId: { $in: studentIds } });
+      if (duplicates.length > 0) {
+        const dupList = duplicates.map(d => d.studentId).join(', ');
+        return res.status(400).json({ success: false, message: `The following Student IDs are already registered: ${dupList}` });
+      }
+    }
+
+    const admissionNumbers = students.map(s => s.admissionNumber ? s.admissionNumber.toUpperCase().trim() : "").filter(Boolean);
+    const duplicatesAdmission = await Student.find({ admissionNumber: { $in: admissionNumbers } });
+    if (duplicatesAdmission.length > 0) {
+      const dupList = duplicatesAdmission.map(d => d.admissionNumber).join(', ');
+      return res.status(400).json({ success: false, message: `The following Admission Numbers are already registered: ${dupList}` });
     }
 
     // Get all valid language subjects for this batch to validate inputs
@@ -183,10 +203,13 @@ exports.addStudentsBulk = async (req, res) => {
     });
     const validLangIds = validLangSubjects.map(sub => sub.subjectId.toUpperCase());
 
-    // Validate that every student has a valid language subject ID
+    // Validate that every student has a valid language subject ID and admission number
     for (let i = 0; i < students.length; i++) {
       const s = students[i];
-      if (!s.language) {
+      if (!s.admissionNumber || !s.admissionNumber.trim()) {
+        return res.status(400).json({ success: false, message: `Row ${i + 1} is missing the Admission Number.` });
+      }
+      if (!s.language || !s.language.trim()) {
         return res.status(400).json({ success: false, message: `Row ${i + 1} is missing the language Subject ID.` });
       }
       const upperLang = s.language.toUpperCase().trim();
@@ -197,7 +220,8 @@ exports.addStudentsBulk = async (req, res) => {
 
     // Format students
     const studentsToInsert = students.map(s => ({
-      studentId: s.studentId.toUpperCase(),
+      admissionNumber: s.admissionNumber.toUpperCase().trim(),
+      studentId: (s.studentId && s.studentId.trim()) ? s.studentId.toUpperCase().trim() : undefined,
       fullName: s.fullName,
       email: s.email,
       batch: batchId,
@@ -356,6 +380,197 @@ exports.getAllotments = async (req, res) => {
     const { semesterId } = req.params;
     const allotments = await Allotment.find({ semester: semesterId });
     return res.status(200).json({ success: true, data: allotments });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Update student details
+exports.updateStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { admissionNumber, studentId, fullName, email, language } = req.body;
+
+    if (!admissionNumber || !fullName || !email || !language) {
+      return res.status(400).json({ success: false, message: 'Admission number, Name, Email, and Language are required' });
+    }
+
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // Check duplicate student ID globally (excluding current student, only if provided)
+    let cleanStudentId = undefined;
+    if (studentId && studentId.trim()) {
+      cleanStudentId = studentId.toUpperCase().trim();
+      const existing = await Student.findOne({ studentId: cleanStudentId, _id: { $ne: id } });
+      if (existing) {
+        return res.status(400).json({ success: false, message: `Student ID ${studentId} is already registered by another student` });
+      }
+    }
+
+    // Check duplicate admission number globally (excluding current student)
+    const existingAdmission = await Student.findOne({ admissionNumber: admissionNumber.toUpperCase().trim(), _id: { $ne: id } });
+    if (existingAdmission) {
+      return res.status(400).json({ success: false, message: `Admission Number ${admissionNumber} is already registered by another student` });
+    }
+
+    // Verify language subject exists for this batch
+    const Subject = require('../models/Subject');
+    const Semester = require('../models/Semester');
+    const semesters = await Semester.find({ batch: student.batch });
+    const semesterIds = semesters.map(s => s._id);
+
+    const langSubject = await Subject.findOne({
+      semester: { $in: semesterIds },
+      subjectId: language.toUpperCase().trim(),
+      subjectType: 'language',
+    });
+
+    if (!langSubject) {
+      return res.status(400).json({ success: false, message: `Language Subject ID "${language}" is not registered in this batch.` });
+    }
+
+    student.admissionNumber = admissionNumber.toUpperCase().trim();
+    student.studentId = cleanStudentId;
+    student.fullName = fullName;
+    student.email = email;
+    student.language = language.toUpperCase().trim();
+
+    await student.save();
+
+    return res.status(200).json({ success: true, message: 'Student details updated successfully', data: student });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Delete student
+exports.deleteStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // Delete allotments and student
+    await Allotment.deleteMany({ student: id });
+    await Student.findByIdAndDelete(id);
+
+    return res.status(200).json({ success: true, message: 'Student deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Calculate deletion impact across database collections
+exports.getDeleteImpact = async (req, res) => {
+  try {
+    const { type, id } = req.query;
+    if (!type || !id) {
+      return res.status(400).json({ success: false, message: 'Type and ID are required' });
+    }
+
+    const SubjectAllocation = require('../models/SubjectAllocation');
+    const InternalAssessment = require('../models/InternalAssessment');
+    const InternalAssessmentMark = require('../models/InternalAssessmentMark');
+
+    let impact = {};
+
+    if (type === 'batch') {
+      const semesters = await Semester.find({ batch: id });
+      const semesterIds = semesters.map(s => s._id);
+      const studentCount = await Student.countDocuments({ batch: id });
+      const semesterCount = semesters.length;
+      const sectionCount = await Section.countDocuments({ semester: { $in: semesterIds } });
+      const allocationCount = await SubjectAllocation.countDocuments({ semester: { $in: semesterIds } });
+      const attendanceCount = await Attendance.countDocuments({ semester: { $in: semesterIds } });
+      const assignmentCount = await Assignment.countDocuments({ semester: { $in: semesterIds } });
+      const iaCount = await InternalAssessment.countDocuments({ batch: id });
+
+      impact = {
+        'Students Roster Records': studentCount,
+        'Academic Semesters': semesterCount,
+        'Sections & Batches Allotments': sectionCount,
+        'Faculty Subject Allocations': allocationCount,
+        'Daily Attendance Logs': attendanceCount,
+        'Course Assignments': assignmentCount,
+        'Internal Assessment Sessions': iaCount,
+      };
+    } else if (type === 'student') {
+      const allotmentCount = await Allotment.countDocuments({ student: id });
+      const attendanceCount = await Attendance.countDocuments({ 'records.student': id });
+      const assignmentCount = await Assignment.countDocuments({ 'submissions.student': id });
+      const iaMarkCount = await InternalAssessmentMark.countDocuments({ 'marks.student': id });
+
+      impact = {
+        'Section Allotments': allotmentCount,
+        'Attendance Presence Logs': attendanceCount,
+        'Course Assignment Submissions': assignmentCount,
+        'Internal Assessment Grades': iaMarkCount,
+      };
+    } else if (type === 'assignment') {
+      const assign = await Assignment.findById(id);
+      const submissionCount = assign ? assign.submissions.length : 0;
+
+      impact = {
+        'Student Assignment Submissions': submissionCount,
+      };
+    } else if (type === 'internal-assessment') {
+      const marksheetCount = await InternalAssessmentMark.countDocuments({ internalAssessment: id });
+      const marksheets = await InternalAssessmentMark.find({ internalAssessment: id });
+      let totalMarksCount = 0;
+      marksheets.forEach(m => {
+        totalMarksCount += m.marks.length;
+      });
+
+      impact = {
+        'Subject Marksheets': marksheetCount,
+        'Recorded Student Grades': totalMarksCount,
+      };
+    } else if (type === 'section') {
+      const allotmentCount = await Allotment.countDocuments({ section: id });
+      const allocationCount = await SubjectAllocation.countDocuments({ section: id });
+      const attendanceCount = await Attendance.countDocuments({ section: id });
+
+      impact = {
+        'Student Section Allotments': allotmentCount,
+        'Faculty Subject Allocations': allocationCount,
+        'Daily Attendance Logs': attendanceCount,
+      };
+    }
+
+    return res.status(200).json({ success: true, impact });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Delete a section
+exports.deleteSection = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const Section = require('../models/Section');
+    const SubjectAllocation = require('../models/SubjectAllocation');
+
+    const section = await Section.findById(id);
+    if (!section) {
+      return res.status(404).json({ success: false, message: 'Section not found' });
+    }
+
+    // Clean up student allotments (set section reference to null)
+    await Allotment.updateMany({ section: id }, { $set: { section: null } });
+
+    // Clean up subject allocations for this section
+    await SubjectAllocation.deleteMany({ section: id });
+
+    // Delete section document
+    await Section.findByIdAndDelete(id);
+
+    return res.status(200).json({ success: true, message: 'Section deleted successfully' });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

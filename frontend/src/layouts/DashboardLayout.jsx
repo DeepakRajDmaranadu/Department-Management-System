@@ -57,7 +57,7 @@ export const DashboardLayout = ({ children }) => {
 
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove("dark");
+    root.classList.add("dark");
   }, []);
 
   const {
@@ -89,9 +89,9 @@ export const DashboardLayout = ({ children }) => {
         return [
           { title: "Department Hub", path: "/dashboard/hod", icon: <FolderTree className="h-4 w-4" /> },
           { title: "Consolidated Attendance", path: "/dashboard/hod/attendance", icon: <CalendarCheck className="h-4 w-4" /> },
+          { title: "Consolidated Assignments", path: "/dashboard/hod/assignments", icon: <CheckCircle className="h-4 w-4" /> },
+          { title: "Consolidated IA Marks", path: "/dashboard/hod/grades", icon: <FileSpreadsheet className="h-4 w-4" /> },
           { title: "Subject Allocation", path: "/dashboard/hod/subjects", icon: <FileSpreadsheet className="h-4 w-4" /> },
-          { title: "Staff Allocations", path: "/dashboard/hod/faculty", icon: <Users className="h-4 w-4" /> },
-          { title: "Course Registry", path: "/dashboard/hod/courses", icon: <BookOpen className="h-4 w-4" /> },
         ];
       case "Faculty":
         return [
