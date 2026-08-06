@@ -32,6 +32,7 @@ import {
   Copy,
   Plus,
   X,
+  SlidersHorizontal,
 } from "lucide-react";
 
 const adminCreateUserSchema = z.object({
@@ -62,9 +63,27 @@ const adminCreateCollegeSchema = z.object({
 });
 
 export const DashboardHome = () => {
-  const { user } = useAuth();
+  const {
+    user,
+    adminActiveCollege,
+    adminActiveCourse,
+    setAdminActiveCollege,
+    setAdminActiveCourse
+  } = useAuth();
   const location = useLocation();
   const toast = useToast();
+
+  const getEffectiveRole = () => {
+    if (user && (user.role === "Admin" || user.role === "Principal" || user.role === "Office Assistant")) {
+      if (window.location.pathname.includes("/dashboard/hod")) return "HOD";
+      if (window.location.pathname.includes("/dashboard/principal")) return "Principal";
+      if (window.location.pathname.includes("/dashboard/faculty")) return "Faculty";
+      if (window.location.pathname.includes("/dashboard/office")) return "Office Assistant";
+    }
+    return user ? user.role : null;
+  };
+  const effectiveRole = getEffectiveRole();
+  const isReadOnly = user?.role === "Principal" || user?.role === "Office Assistant";
   
   // State
   const [colleges, setColleges] = useState([]);
@@ -76,6 +95,14 @@ export const DashboardHome = () => {
   const [staffSearchQuery, setStaffSearchQuery] = useState("");
   const [courseSearchQuery, setCourseSearchQuery] = useState("");
   const [collegeSearchQuery, setCollegeSearchQuery] = useState("");
+
+  const [oaSelectedColleges, setOaSelectedColleges] = useState([]);
+  const [oaSelectedDepartments, setOaSelectedDepartments] = useState([]);
+  const [isOaScopeModalOpen, setIsOaScopeModalOpen] = useState(false);
+  const [oaModalUser, setOaModalUser] = useState(null);
+  const [oaModalColleges, setOaModalColleges] = useState([]);
+  const [oaModalDepartments, setOaModalDepartments] = useState([]);
+  const [isOaSaving, setIsOaSaving] = useState(false);
   
   const successMsg = null;
   const setSuccessMsg = (msg) => { if (msg) toast.success(msg); };
@@ -340,6 +367,7 @@ export const DashboardHome = () => {
   const [newSubjectId, setNewSubjectId] = useState("");
   const [newSubjectName, setNewSubjectName] = useState("");
   const [newSubjectType, setNewSubjectType] = useState("regular");
+  const [newSubjectSpecialization, setNewSubjectSpecialization] = useState("");
   const [selectedAllocSubjectId, setSelectedAllocSubjectId] = useState("");
   const [selectedAllocSectionId, setSelectedAllocSectionId] = useState("");
   const [selectedAllocFacultyId, setSelectedAllocFacultyId] = useState("");
@@ -364,12 +392,26 @@ export const DashboardHome = () => {
   const [newStudentName, setNewStudentName] = useState("");
   const [newStudentEmail, setNewStudentEmail] = useState("");
   const [newStudentLanguage, setNewStudentLanguage] = useState("");
+  const [newStudentSpecialization, setNewStudentSpecialization] = useState("");
   const [batchLanguages, setBatchLanguages] = useState([]);
+  const [batchSpecializations, setBatchSpecializations] = useState([]);
   const [isManualLanguage, setIsManualLanguage] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [csvPreview, setCsvPreview] = useState([]);
   const [newSemesterName, setNewSemesterName] = useState("");
   const [newSectionName, setNewSectionName] = useState("");
+  const [editingSemester, setEditingSemester] = useState(null);
+  const [editSemesterName, setEditSemesterName] = useState("");
+  const [editingSection, setEditingSection] = useState(null);
+  const [editSectionName, setEditSectionName] = useState("");
+  const [editingStudentId, setEditingStudentId] = useState(null);
+  const [editStudentAdmissionNumber, setEditStudentAdmissionNumber] = useState("");
+  const [editStudentIdVal, setEditStudentIdVal] = useState("");
+  const [editStudentFullName, setEditStudentFullName] = useState("");
+  const [editStudentEmail, setEditStudentEmail] = useState("");
+  const [editStudentLanguage, setEditStudentLanguage] = useState("");
+  const [editStudentSpecialization, setEditStudentSpecialization] = useState("");
+  const [autoAssignCounts, setAutoAssignCounts] = useState({});
   const batchSuccess = null;
   const setBatchSuccess = (msg) => { if (msg) toast.success(msg); };
   const batchError = null;
@@ -377,7 +419,7 @@ export const DashboardHome = () => {
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [bulkSectionId, setBulkSectionId] = useState("");
   const [localAllotments, setLocalAllotments] = useState({});
-  const [recentActivitiesOpen, setRecentActivitiesOpen] = useState(true);
+  const [recentActivitiesOpen, setRecentActivitiesOpen] = useState(false);
 
   // Faculty Attendance states
   const [myAllocations, setMyAllocations] = useState([]);
@@ -604,7 +646,12 @@ export const DashboardHome = () => {
   // HOD Workspace Fetch Functions
   const fetchBatches = async () => {
     try {
-      const response = await api.get("/api/batches");
+      const params = {};
+      if (user.role === "Admin" || user.role === "Principal" || user.role === "Office Assistant") {
+        params.course = adminActiveCourse;
+        params.college = adminActiveCollege;
+      }
+      const response = await api.get("/api/batches", { params });
       if (response.data.success) {
         setBatches(response.data.data);
       }
@@ -617,7 +664,12 @@ export const DashboardHome = () => {
     try {
       const response = await api.get(`/api/batches/${batchId}/students`);
       if (response.data.success) {
-        setStudents(response.data.data);
+        const sorted = [...response.data.data].sort((a, b) => {
+          const regA = a.studentId || a.admissionNumber || "";
+          const regB = b.studentId || b.admissionNumber || "";
+          return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        setStudents(sorted);
       }
     } catch (err) {
       console.error("Failed to fetch students", err);
@@ -686,12 +738,24 @@ export const DashboardHome = () => {
     }
   };
 
+  const fetchBatchSpecializations = async (batchId) => {
+    try {
+      const response = await api.get(`/api/batches/${batchId}/specializations`);
+      if (response.data.success) {
+        setBatchSpecializations(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch batch specializations:", err);
+    }
+  };
+
   // Reactively trigger updates when selecting a Batch or Semester
   useEffect(() => {
     if (selectedBatch) {
       fetchStudents(selectedBatch._id);
       fetchSemesters(selectedBatch._id);
       fetchBatchLanguages(selectedBatch._id);
+      fetchBatchSpecializations(selectedBatch._id);
       setSelectedSemester(null);
       setSections([]);
       setAllotments([]);
@@ -722,7 +786,11 @@ export const DashboardHome = () => {
 
   const fetchFaculties = async () => {
     try {
-      const response = await api.get("/api/subjects/faculty");
+      const params = {};
+      if (user.role === "Admin" || user.role === "Principal" || user.role === "Office Assistant") {
+        params.college = adminActiveCollege;
+      }
+      const response = await api.get("/api/subjects/faculty", { params });
       if (response.data.success) {
         setFaculties(response.data.data);
       }
@@ -805,11 +873,14 @@ export const DashboardHome = () => {
       if (user.role === "HOD") {
         fetchBatches();
       }
+      if ((user.role === "Admin" || user.role === "Principal" || user.role === "Office Assistant") && adminActiveCourse && adminActiveCollege) {
+        fetchBatches();
+      }
       if (user.role === "Faculty") {
         fetchMyAllocations();
       }
     }
-  }, [user, location.pathname]);
+  }, [user, location.pathname, adminActiveCourse, adminActiveCollege]);
 
   if (!user) return null;
 
@@ -823,10 +894,15 @@ export const DashboardHome = () => {
       return;
     }
     try {
-      const response = await api.post("/api/batches", {
+      const payload = {
         batchId: newBatchId,
         years: newBatchYears,
-      });
+      };
+      if (user.role === "Admin") {
+        payload.course = adminActiveCourse;
+        payload.college = adminActiveCollege;
+      }
+      const response = await api.post("/api/batches", payload);
       if (response.data.success) {
         setBatchSuccess("Batch created successfully");
         setNewBatchId("");
@@ -859,6 +935,127 @@ export const DashboardHome = () => {
     }
   };
 
+  useEffect(() => {
+    if (sections.length > 0 && students.length > 0) {
+      const equalShare = Math.floor(students.length / sections.length);
+      const remainder = students.length % sections.length;
+      const dist = {};
+      sections.forEach((sec, idx) => {
+        dist[sec._id] = equalShare + (idx < remainder ? 1 : 0);
+      });
+      setAutoAssignCounts(dist);
+    } else {
+      setAutoAssignCounts({});
+    }
+  }, [sections, students]);
+
+  const handleAutoAssign = () => {
+    if (sections.length === 0) {
+      toast.error("Please create at least one section first.");
+      return;
+    }
+    if (students.length === 0) {
+      toast.error("No students registered in this batch yet.");
+      return;
+    }
+
+    const counts = {};
+    let totalTarget = 0;
+    sections.forEach(sec => {
+      const c = parseInt(autoAssignCounts[sec._id]) || 0;
+      counts[sec._id] = c;
+      totalTarget += c;
+    });
+
+    if (totalTarget === 0) {
+      const equalShare = Math.floor(students.length / sections.length);
+      const remainder = students.length % sections.length;
+      sections.forEach((sec, idx) => {
+        counts[sec._id] = equalShare + (idx < remainder ? 1 : 0);
+      });
+    }
+
+    let studentIndex = 0;
+    const updated = { ...localAllotments };
+
+    sections.forEach(sec => {
+      const limit = counts[sec._id];
+      for (let i = 0; i < limit && studentIndex < students.length; i++) {
+        const student = students[studentIndex];
+        updated[student._id] = sec._id;
+        studentIndex++;
+      }
+    });
+
+    while (studentIndex < students.length) {
+      const student = students[studentIndex];
+      const fallbackSec = sections[studentIndex % sections.length]._id;
+      updated[student._id] = fallbackSec;
+      studentIndex++;
+    }
+
+    setLocalAllotments(updated);
+    toast.success("Students distributed to sections successfully! Click 'Save Assignments' below to persist changes.");
+  };
+
+  const onUpdateStudent = async (studentId) => {
+    if (!editStudentAdmissionNumber.trim() || !editStudentFullName.trim() || !editStudentEmail.trim() || !editStudentLanguage.trim()) {
+      setBatchError("Admission number, name, email, and language are required");
+      return;
+    }
+    setBatchSuccess(null);
+    setBatchError(null);
+    try {
+      const response = await api.put(`/api/batches/students/${studentId}`, {
+        admissionNumber: editStudentAdmissionNumber.trim(),
+        studentId: editStudentIdVal.trim() || undefined,
+        fullName: editStudentFullName.trim(),
+        email: editStudentEmail.trim(),
+        language: editStudentLanguage.trim(),
+        specialization: editStudentSpecialization.trim() || undefined,
+      });
+      if (response.data.success) {
+        setBatchSuccess("Student updated successfully");
+        setEditingStudentId(null);
+        fetchStudents(selectedBatch._id);
+      }
+    } catch (err) {
+      setBatchError(err.response?.data?.message || "Failed to update student");
+    }
+  };
+
+  const onDeleteStudent = async (studentId) => {
+    try {
+      const impactRes = await api.get('/api/batches/delete-impact', {
+        params: { type: 'student', id: studentId }
+      });
+      
+      let impactMsg = "";
+      if (impactRes.data.success && impactRes.data.impact) {
+        const lines = Object.entries(impactRes.data.impact)
+          .filter(([_, count]) => count > 0)
+          .map(([name, count]) => `• ${name}: ${count}`);
+        if (lines.length > 0) {
+          impactMsg = "\n\nCRITICAL IMPACT: Deleting this student will also permanently delete:\n" + lines.join("\n");
+        }
+      }
+
+      if (!window.confirm(`Are you sure you want to delete this student? All academic records (attendance, internal assessment grades, assignments) will be permanently deleted.${impactMsg}`)) {
+        return;
+      }
+
+      setBatchSuccess(null);
+      setBatchError(null);
+      const response = await api.delete(`/api/batches/students/${studentId}`);
+      if (response.data.success) {
+        setBatchSuccess("Student deleted successfully");
+        fetchStudents(selectedBatch._id);
+      }
+    } catch (err) {
+      setBatchError(err.response?.data?.message || "Failed to delete student");
+    }
+  };
+
   const onAddStudent = async (e) => {
     e.preventDefault();
     setBatchSuccess(null);
@@ -874,6 +1071,7 @@ export const DashboardHome = () => {
         fullName: newStudentName,
         email: newStudentEmail,
         language: newStudentLanguage,
+        specialization: newStudentSpecialization.trim() || undefined,
       });
       if (response.data.success) {
         setBatchSuccess("Student registered successfully");
@@ -881,6 +1079,7 @@ export const DashboardHome = () => {
         setNewStudentId("");
         setNewStudentName("");
         setNewStudentEmail("");
+        setNewStudentSpecialization("");
         // Refresh language list and reset newStudentLanguage
         fetchBatchLanguages(selectedBatch._id);
         fetchStudents(selectedBatch._id);
@@ -905,11 +1104,11 @@ export const DashboardHome = () => {
       
       const parts = line.split(",").map(p => p.trim().replace(/^["']|["']$/g, ""));
       if (parts.length < 5) {
-        setBatchError(`Row ${i + 1} has insufficient columns. Required format: AdmissionNumber, StudentID, Name, Email, Language`);
+        setBatchError(`Row ${i + 1} has insufficient columns. Required format: AdmissionNumber, StudentID, Name, Email, Language, [Specialization]`);
         return;
       }
       
-      const [admissionNumber, studentId, fullName, email, language] = parts;
+      const [admissionNumber, studentId, fullName, email, language, specialization] = parts;
       if (!admissionNumber || !fullName || !email || !language) {
         setBatchError(`Row ${i + 1} has empty values (AdmissionNumber, Name, Email, and Language are required).`);
         return;
@@ -933,7 +1132,14 @@ export const DashboardHome = () => {
         return;
       }
       
-      parsed.push({ admissionNumber, studentId: studentId.trim() || undefined, fullName, email, language: cleanLang });
+      parsed.push({ 
+        admissionNumber, 
+        studentId: studentId.trim() || undefined, 
+        fullName, 
+        email, 
+        language: cleanLang,
+        specialization: specialization && specialization.trim() ? specialization.trim() : undefined
+      });
     }
     setCsvPreview(parsed);
     setBatchSuccess(`Parsed ${parsed.length} rows successfully. Please click upload bulk to save.`);
@@ -960,7 +1166,7 @@ export const DashboardHome = () => {
     const lang1 = batchLanguages.length > 0 ? batchLanguages[0].subjectId : "KAN101";
     const lang2 = batchLanguages.length > 1 ? batchLanguages[1].subjectId : "HIN101";
     const lang3 = batchLanguages.length > 2 ? batchLanguages[2].subjectId : "MAL101";
-    const csvContent = `data:text/csv;charset=utf-8,admissionNumber,studentId,fullName,email,language\nADM202301,STU202301,John Doe,john@example.com,${lang1}\nADM202302,STU202302,Jane Smith,jane@example.com,${lang2}\nADM202303,STU202303,David Miller,david@example.com,${lang3}`;
+    const csvContent = `data:text/csv;charset=utf-8,admissionNumber,studentId,fullName,email,language,specialization\nADM202301,STU202301,John Doe,john@example.com,${lang1},Data Science\nADM202302,STU202302,Jane Smith,jane@example.com,${lang2},Cybersecurity\nADM202303,STU202303,David Miller,david@example.com,${lang3},Data Science`;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -1036,6 +1242,122 @@ export const DashboardHome = () => {
     }
   };
 
+  const onUpdateSemester = async (id, nameVal) => {
+    if (!nameVal.trim()) {
+      setBatchError("Semester name is required");
+      return;
+    }
+    setBatchSuccess(null);
+    setBatchError(null);
+    try {
+      const response = await api.put(`/api/batches/semesters/${id}`, {
+        name: nameVal
+      });
+      if (response.data.success) {
+        setBatchSuccess("Semester updated successfully");
+        setEditingSemester(null);
+        setEditSemesterName("");
+        fetchSemesters(selectedBatch._id);
+        if (selectedSemester && selectedSemester._id === id) {
+          setSelectedSemester(response.data.data);
+        }
+      }
+    } catch (err) {
+      setBatchError(err.response?.data?.message || "Failed to update semester");
+    }
+  };
+
+  const onDeleteSemester = async (id) => {
+    try {
+      const impactRes = await api.get('/api/batches/delete-impact', {
+        params: { type: 'semester', id }
+      });
+      
+      let impactMsg = "";
+      if (impactRes.data.success && impactRes.data.impact) {
+        const lines = Object.entries(impactRes.data.impact)
+          .filter(([_, count]) => count > 0)
+          .map(([name, count]) => `• ${name}: ${count}`);
+        if (lines.length > 0) {
+          impactMsg = "\n\nCRITICAL IMPACT: Deleting this semester will also permanently delete:\n" + lines.join("\n");
+        }
+      }
+
+      if (!window.confirm(`Are you sure you want to delete this semester? All associated subjects, sections, allotments, and marks sheets will be permanently deleted.${impactMsg}`)) {
+        return;
+      }
+
+      setBatchSuccess(null);
+      setBatchError(null);
+      const response = await api.delete(`/api/batches/semesters/${id}`);
+      if (response.data.success) {
+        setBatchSuccess("Semester deleted successfully");
+        if (selectedSemester && selectedSemester._id === id) {
+          setSelectedSemester(null);
+          setSections([]);
+          setAllotments([]);
+        }
+        fetchSemesters(selectedBatch._id);
+      }
+    } catch (err) {
+      setBatchError(err.response?.data?.message || "Failed to delete semester");
+    }
+  };
+
+  const onUpdateSection = async (id, nameVal) => {
+    if (!nameVal.trim()) {
+      setBatchError("Section name is required");
+      return;
+    }
+    setBatchSuccess(null);
+    setBatchError(null);
+    try {
+      const response = await api.put(`/api/batches/sections/${id}`, {
+        name: nameVal
+      });
+      if (response.data.success) {
+        setBatchSuccess("Section updated successfully");
+        setEditingSection(null);
+        setEditSectionName("");
+        fetchSections(selectedSemester._id);
+      }
+    } catch (err) {
+      setBatchError(err.response?.data?.message || "Failed to update section");
+    }
+  };
+
+  const onDeleteSection = async (id) => {
+    try {
+      const impactRes = await api.get('/api/batches/delete-impact', {
+        params: { type: 'section', id }
+      });
+      
+      let impactMsg = "";
+      if (impactRes.data.success && impactRes.data.impact) {
+        const lines = Object.entries(impactRes.data.impact)
+          .filter(([_, count]) => count > 0)
+          .map(([name, count]) => `• ${name}: ${count}`);
+        if (lines.length > 0) {
+          impactMsg = "\n\nCRITICAL IMPACT: Deleting this section will also permanently delete:\n" + lines.join("\n");
+        }
+      }
+
+      if (!window.confirm(`Are you sure you want to delete this section? Associated allocations and students allotments will be cleaned up.${impactMsg}`)) {
+        return;
+      }
+
+      setBatchSuccess(null);
+      setBatchError(null);
+      const response = await api.delete(`/api/batches/sections/${id}`);
+      if (response.data.success) {
+        setBatchSuccess("Section deleted successfully");
+        fetchSections(selectedSemester._id);
+      }
+    } catch (err) {
+      setBatchError(err.response?.data?.message || "Failed to delete section");
+    }
+  };
+
   const onCreateSubject = async (e) => {
     e.preventDefault();
     setAllocSuccess(null);
@@ -1050,29 +1372,40 @@ export const DashboardHome = () => {
           subjectId: newSubjectId,
           name: newSubjectName,
           subjectType: newSubjectType,
+          specialization: newSubjectType === 'specialization' ? newSubjectSpecialization : undefined,
         });
         if (response.data.success) {
           setAllocSuccess("Subject updated successfully");
           setNewSubjectId("");
           setNewSubjectName("");
           setNewSubjectType("regular");
+          setNewSubjectSpecialization("");
           setEditingSubject(null);
           fetchSubjects(selectedSemester._id);
           fetchSubjectAllocations(selectedSemester._id);
+          if (selectedBatch) fetchBatchSpecializations(selectedBatch._id);
         }
       } else {
-        const response = await api.post("/api/subjects", {
+        const payload = {
           subjectId: newSubjectId,
           name: newSubjectName,
           semesterId: selectedSemester._id,
           subjectType: newSubjectType,
-        });
+          specialization: newSubjectType === 'specialization' ? newSubjectSpecialization : undefined,
+        };
+        if (user.role === "Admin") {
+          payload.course = adminActiveCourse;
+          payload.college = adminActiveCollege;
+        }
+        const response = await api.post("/api/subjects", payload);
         if (response.data.success) {
           setAllocSuccess("Subject created successfully");
           setNewSubjectId("");
           setNewSubjectName("");
           setNewSubjectType("regular");
+          setNewSubjectSpecialization("");
           fetchSubjects(selectedSemester._id);
+          if (selectedBatch) fetchBatchSpecializations(selectedBatch._id);
         }
       }
     } catch (err) {
@@ -1089,6 +1422,7 @@ export const DashboardHome = () => {
         setAllocSuccess("Subject deleted successfully");
         fetchSubjects(selectedSemester._id);
         fetchSubjectAllocations(selectedSemester._id);
+        if (selectedBatch) fetchBatchSpecializations(selectedBatch._id);
       }
     } catch (err) {
       setAllocError(err.response?.data?.message || "Failed to delete subject");
@@ -1119,12 +1453,17 @@ export const DashboardHome = () => {
           fetchSubjectAllocations(selectedSemester._id);
         }
       } else {
-        const response = await api.post("/api/subjects/allocations", {
+        const payload = {
           subjectId: selectedAllocSubjectId,
           semesterId: selectedSemester._id,
           sectionId: selectedAllocSectionId || null,
           facultyId: selectedAllocFacultyId,
-        });
+        };
+        if (user.role === "Admin") {
+          payload.course = adminActiveCourse;
+          payload.college = adminActiveCollege;
+        }
+        const response = await api.post("/api/subjects/allocations", payload);
         if (response.data.success) {
           setAllocSuccess("Subject allocated to faculty successfully");
           setSelectedAllocSubjectId("");
@@ -1188,7 +1527,12 @@ export const DashboardHome = () => {
     try {
       const response = await api.get(`/api/attendance/students?allocationId=${allocId}&date=${dateVal}`);
       if (response.data.success) {
-        setAttendanceStudents(response.data.data);
+        const sorted = [...response.data.data].sort((a, b) => {
+          const regA = a.studentId || a.admissionNumber || "";
+          const regB = b.studentId || b.admissionNumber || "";
+          return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        setAttendanceStudents(sorted);
         setAttendanceIsMarked(response.data.isMarked);
         setAttendanceEditable(response.data.editable !== false);
         setAttendanceMinsRemaining(response.data.minsRemaining ?? null);
@@ -1235,6 +1579,46 @@ export const DashboardHome = () => {
     }
   };
 
+  const handleExcelColumnPaste = (e, startIndex) => {
+    e.preventDefault();
+    if (!attendanceEditable) return;
+    const clipboardData = e.clipboardData.getData("text");
+    if (!clipboardData) return;
+
+    // Split pasted text into lines
+    const lines = clipboardData
+      .split(/\r\n|\n|\r/)
+      .map((l) => l.trim())
+      .filter((l) => l !== "");
+
+    if (lines.length === 0) return;
+
+    let updatedCount = 0;
+    setAttendanceStudents((prev) => {
+      const updated = [...prev];
+      lines.forEach((val, i) => {
+        const targetIndex = startIndex + i;
+        if (targetIndex < updated.length) {
+          const cleanVal = val.trim().toLowerCase();
+          if (cleanVal === "1" || cleanVal === "p" || cleanVal === "present") {
+            updated[targetIndex] = { ...updated[targetIndex], status: "present" };
+            updatedCount++;
+          } else if (cleanVal === "0" || cleanVal === "a" || cleanVal === "absent") {
+            updated[targetIndex] = { ...updated[targetIndex], status: "absent" };
+            updatedCount++;
+          }
+        }
+      });
+      return updated;
+    });
+
+    if (updatedCount > 0) {
+      toast.success(`Applied Excel attendance data to ${updatedCount} student(s)!`);
+    } else {
+      toast.error("No valid 0 or 1 values found in pasted text.");
+    }
+  };
+
   const fetchConsolidatedAttendance = async (allocId) => {
     if (!allocId) return;
     setConsolidatedLoading(true);
@@ -1242,7 +1626,12 @@ export const DashboardHome = () => {
     try {
       const response = await api.get(`/api/attendance/consolidated?allocationId=${allocId}`);
       if (response.data.success) {
-        setConsolidatedData(response.data.data);
+        const sorted = [...response.data.data].sort((a, b) => {
+          const regA = a.studentId || a.admissionNumber || "";
+          const regB = b.studentId || b.admissionNumber || "";
+          return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        setConsolidatedData(sorted);
       }
     } catch (err) {
       console.error("Failed to fetch consolidated attendance", err);
@@ -1782,7 +2171,12 @@ export const DashboardHome = () => {
         }
       });
       if (response.data.success) {
-        setHodDailyStudents(response.data.data);
+        const sorted = [...response.data.data].sort((a, b) => {
+          const regA = a.studentId || a.admissionNumber || "";
+          const regB = b.studentId || b.admissionNumber || "";
+          return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        setHodDailyStudents(sorted);
         setHodDailyIsMarked(response.data.isMarked);
         setHodDailyFacultyName(response.data.facultyName);
       }
@@ -2155,9 +2549,9 @@ export const DashboardHome = () => {
 
     list.sort((a, b) => {
       if (hodSortCriteria === "rollAsc") {
-        return (a.studentId || "").localeCompare(b.studentId || "");
+        return (a.studentId || "").localeCompare(b.studentId || "", undefined, { numeric: true, sensitivity: 'base' });
       } else if (hodSortCriteria === "rollDesc") {
-        return (b.studentId || "").localeCompare(a.studentId || "");
+        return (b.studentId || "").localeCompare(a.studentId || "", undefined, { numeric: true, sensitivity: 'base' });
       } else if (hodSortCriteria === "nameAsc") {
         return a.fullName.localeCompare(b.fullName);
       } else if (hodSortCriteria === "pctAsc") {
@@ -2178,6 +2572,21 @@ export const DashboardHome = () => {
 
     return list;
   };
+
+  useEffect(() => {
+    if (batches && batches.length > 0) {
+      if (!hodSelectedBatch) setHodSelectedBatch(batches[0]);
+      if (!hodAssignSelectedBatch) setHodAssignSelectedBatch(batches[0]);
+      if (!hodIaConsolidatedSelectedBatch) setHodIaConsolidatedSelectedBatch(batches[0]);
+      if (!dynIaSelectedBatch) setDynIaSelectedBatch(batches[0]);
+    }
+  }, [batches]);
+
+  useEffect(() => {
+    if (hodSemesters && hodSemesters.length > 0 && !hodSelectedSemester) {
+      setHodSelectedSemester(hodSemesters[0]);
+    }
+  }, [hodSemesters]);
 
   useEffect(() => {
     if (hodSelectedBatch) {
@@ -2250,9 +2659,9 @@ export const DashboardHome = () => {
 
     list.sort((a, b) => {
       if (hodAssignSortCriteria === "rollAsc") {
-        return (a.studentId || "").localeCompare(b.studentId || "");
+        return (a.studentId || "").localeCompare(b.studentId || "", undefined, { numeric: true, sensitivity: 'base' });
       } else if (hodAssignSortCriteria === "rollDesc") {
-        return (b.studentId || "").localeCompare(a.studentId || "");
+        return (b.studentId || "").localeCompare(a.studentId || "", undefined, { numeric: true, sensitivity: 'base' });
       } else if (hodAssignSortCriteria === "nameAsc") {
         return a.fullName.localeCompare(b.fullName);
       } else if (hodAssignSortCriteria === "pctAsc") {
@@ -2567,12 +2976,16 @@ export const DashboardHome = () => {
     }
 
     try {
-      const response = await api.post("/api/internal-assessments", {
+      const payload = {
         title: hodIaTitle.trim(),
         maxMarks: 50,
         batch: hodIaSelectedBatch._id,
         semester: hodIaSelectedSemester._id,
-      });
+      };
+      if (user.role === "Admin") {
+        payload.college = adminActiveCollege;
+      }
+      const response = await api.post("/api/internal-assessments", payload);
 
       if (response.data.success) {
         toast.success("Internal Assessment created successfully!");
@@ -2639,9 +3052,9 @@ export const DashboardHome = () => {
 
     list.sort((a, b) => {
       if (hodIaSortCriteria === "rollAsc") {
-        return (a.studentId || "").localeCompare(b.studentId || "");
+        return (a.studentId || "").localeCompare(b.studentId || "", undefined, { numeric: true, sensitivity: 'base' });
       } else if (hodIaSortCriteria === "rollDesc") {
-        return (b.studentId || "").localeCompare(a.studentId || "");
+        return (b.studentId || "").localeCompare(a.studentId || "", undefined, { numeric: true, sensitivity: 'base' });
       } else if (hodIaSortCriteria === "nameAsc") {
         return a.fullName.localeCompare(b.fullName);
       } else if (hodIaSortCriteria === "pctAsc") {
@@ -3074,7 +3487,12 @@ export const DashboardHome = () => {
         `/api/internal-assessments/faculty/marks?internalAssessmentId=${iaId}&subjectId=${subId}&sectionId=${secId || "all"}`
       );
       if (response.data.success) {
-        setFacultyIaMarksheet(response.data.data.marks);
+        const sorted = [...response.data.data.marks].sort((a, b) => {
+          const regA = a.student?.studentId || a.student?.admissionNumber || "";
+          const regB = b.student?.studentId || b.student?.admissionNumber || "";
+          return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        setFacultyIaMarksheet(sorted);
         setFacultyIaMaxMarks(response.data.data.maxMarks || 50);
       }
     } catch (err) {
@@ -3208,13 +3626,18 @@ export const DashboardHome = () => {
     if (!dynIaSelectedBatch || !dynIaSelectedSemester || !dynIaActiveSubject) return;
     setDynIaSaving(true);
     try {
-      const response = await api.post("/api/internal-assessments/hod/dynamic-sheet", {
+      const payload = {
         batchId: dynIaSelectedBatch._id,
         semesterId: dynIaSelectedSemester._id,
         subjectId: dynIaActiveSubject._id,
         columns: dynIaSheetColumns,
         customData: dynIaSheetCustomData
-      });
+      };
+      if (user.role === "Admin") {
+        payload.course = adminActiveCourse;
+        payload.college = adminActiveCollege;
+      }
+      const response = await api.post("/api/internal-assessments/hod/dynamic-sheet", payload);
 
       if (response.data.success) {
         toast.success("Dynamic consolidation sheet configuration saved successfully!");
@@ -3344,7 +3767,7 @@ export const DashboardHome = () => {
       { title: "Session Health", value: "Optimal", change: "Latency < 12ms", icon: <Activity className="h-4 w-4 text-zinc-500" /> },
     ];
 
-    switch (user.role) {
+    switch (effectiveRole) {
       case "Admin":
         return [
           { title: "Total Colleges", value: `${colleges.length}`, change: "Registered organizations", icon: <Building2 className="h-4 w-4 text-zinc-400" /> },
@@ -3353,9 +3776,17 @@ export const DashboardHome = () => {
         ];
       case "HOD":
         return [
-          { title: "Faculty Members", value: "8", change: `${user.department}`, icon: <Users className="h-4 w-4 text-zinc-400" /> },
-          { title: "Active Courses", value: "12 Modules", change: "Semester 1", icon: <FileSpreadsheet className="h-4 w-4 text-zinc-400" /> },
-          ...defaultStats.slice(0, 2),
+          { title: "Roster Students", value: selectedBatch ? `${students.length} Students` : "—", change: selectedBatch ? `Batch: ${selectedBatch.name}` : "Select a batch", icon: <Users className="h-4 w-4 text-zinc-400" /> },
+          { title: "Active Subjects", value: selectedSemester ? `${subjects.length} Subjects` : "—", change: selectedSemester ? `Semester: ${selectedSemester.name}` : "Select a semester", icon: <BookOpen className="h-4 w-4 text-zinc-400" /> },
+          { title: "Created Sections", value: selectedSemester ? `${sections.length} Sections` : "—", change: selectedSemester ? "Academic student groups" : "Select a semester", icon: <Building2 className="h-4 w-4 text-zinc-400" /> },
+          { title: "Faculty Members", value: faculties.length > 0 ? `${faculties.length}` : "—", change: user.role === 'Admin' ? (adminActiveCourse || "System-wide") : user.department, icon: <Users className="h-4 w-4 text-zinc-400" /> },
+        ];
+      case "Principal":
+        return [
+          { title: "Total Departments", value: `${courses.length}`, change: "Active course paths", icon: <BookOpen className="h-4 w-4 text-zinc-400" /> },
+          { title: "Active Batches", value: `${batches.length}`, change: "Academic student batches", icon: <Users className="h-4 w-4 text-zinc-400" /> },
+          { title: "Registered Colleges", value: `${colleges.length}`, change: "Campus locations", icon: <Building2 className="h-4 w-4 text-zinc-400" /> },
+          { title: "Campus Overseer", value: user.college || "Principal Office", change: "Current College Boundary", icon: <Server className="h-4 w-4 text-zinc-400" /> },
         ];
       case "Faculty":
         return [
@@ -3460,12 +3891,19 @@ export const DashboardHome = () => {
     setIsSubmitting(true);
 
     try {
-      const response = await api.post("/api/users", data);
+      const payload = { ...data };
+      if (data.role === "Office Assistant") {
+        payload.assignedColleges = oaSelectedColleges;
+        payload.assignedDepartments = oaSelectedDepartments;
+      }
+      const response = await api.post("/api/users", payload);
       if (response.data.success) {
         setSuccessMsg(
           `Successfully registered ${data.fullName} as ${data.role}.`
         );
         resetUser();
+        setOaSelectedColleges([]);
+        setOaSelectedDepartments([]);
         fetchUsers();
       }
     } catch (err) {
@@ -3474,6 +3912,27 @@ export const DashboardHome = () => {
       );
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const onSaveOaScopeAllocations = async () => {
+    if (!oaModalUser) return;
+    setIsOaSaving(true);
+    try {
+      const response = await api.put(`/api/users/${oaModalUser.id || oaModalUser._id}`, {
+        assignedColleges: oaModalColleges,
+        assignedDepartments: oaModalDepartments,
+      });
+      if (response.data.success) {
+        toast.success(`Scope allocations updated for ${oaModalUser.fullName}!`);
+        setIsOaScopeModalOpen(false);
+        setOaModalUser(null);
+        fetchUsers();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to update scope allocations.");
+    } finally {
+      setIsOaSaving(false);
     }
   };
 
@@ -3633,8 +4092,9 @@ export const DashboardHome = () => {
   };
 
 
+
   const renderWorkspace = () => {
-    if (user.role === "Admin") {
+    if (effectiveRole === "Admin") {
       return (
             <>              {/* Register Employee Card */}
               <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
@@ -3747,25 +4207,27 @@ export const DashboardHome = () => {
                         )}
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="college" className="text-zinc-700 dark:text-zinc-300">College</Label>
-                        <select
-                          id="college"
-                          className="flex h-9 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-900 dark:text-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none"
-                          {...registerUser("college")}
-                          disabled={isSubmitting}
-                        >
-                          <option value="">-- Select College --</option>
-                          {colleges.map((col) => (
-                            <option key={col.collegeId} value={col.collegeName}>
-                              {col.collegeName} ({col.collegeId})
-                            </option>
-                          ))}
-                        </select>
-                        {errorsUser.college && (
-                          <p className="text-[11px] text-red-500">{errorsUser.college.message}</p>
-                        )}
-                      </div>
+                      {watchedRole !== "Office Assistant" && (
+                        <div className="space-y-2">
+                          <Label htmlFor="college" className="text-zinc-700 dark:text-zinc-300">College</Label>
+                          <select
+                            id="college"
+                            className="flex h-9 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-900 dark:text-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none"
+                            {...registerUser("college")}
+                            disabled={isSubmitting}
+                          >
+                            <option value="">-- Select College --</option>
+                            {colleges.map((col) => (
+                              <option key={col.collegeId} value={col.collegeName}>
+                                {col.collegeName} ({col.collegeId})
+                              </option>
+                            ))}
+                          </select>
+                          {errorsUser.college && (
+                            <p className="text-[11px] text-red-500">{errorsUser.college.message}</p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {watchedRole === "HOD" && (
@@ -3789,6 +4251,74 @@ export const DashboardHome = () => {
                         {errorsUser.department && (
                           <p className="text-[11px] text-red-500">{errorsUser.department.message}</p>
                         )}
+                      </div>
+                    )}
+
+                    {watchedRole === "Office Assistant" && (
+                      <div className="space-y-4 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                        <div className="space-y-1.5">
+                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold text-xs">
+                            Allocate Colleges (Office Assistant Scope)
+                          </Label>
+                          <div className="flex flex-wrap gap-2 p-2 border border-zinc-200 dark:border-zinc-800 rounded-md bg-zinc-50/50 dark:bg-zinc-900/30 max-h-36 overflow-y-auto">
+                            {colleges.length === 0 ? (
+                              <span className="text-zinc-400 italic text-[11px]">No colleges created yet</span>
+                            ) : (
+                              colleges.map((col) => {
+                                const isChecked = oaSelectedColleges.includes(col.collegeName);
+                                return (
+                                  <label key={col.collegeId || col._id} className="flex items-center space-x-1.5 text-xs cursor-pointer p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setOaSelectedColleges([...oaSelectedColleges, col.collegeName]);
+                                        } else {
+                                          setOaSelectedColleges(oaSelectedColleges.filter(c => c !== col.collegeName));
+                                        }
+                                      }}
+                                      className="rounded border-zinc-300 text-primary focus:ring-primary"
+                                    />
+                                    <span>{col.collegeName}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold text-xs">
+                            Allocate Departments (Office Assistant Scope)
+                          </Label>
+                          <div className="flex flex-wrap gap-2 p-2 border border-zinc-200 dark:border-zinc-800 rounded-md bg-zinc-50/50 dark:bg-zinc-900/30 max-h-36 overflow-y-auto">
+                            {courses.length === 0 ? (
+                              <span className="text-zinc-400 italic text-[11px]">No departments created yet</span>
+                            ) : (
+                              courses.map((crs) => {
+                                const isChecked = oaSelectedDepartments.includes(crs.courseName);
+                                return (
+                                  <label key={crs.courseId || crs._id} className="flex items-center space-x-1.5 text-xs cursor-pointer p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setOaSelectedDepartments([...oaSelectedDepartments, crs.courseName]);
+                                        } else {
+                                          setOaSelectedDepartments(oaSelectedDepartments.filter(d => d !== crs.courseName));
+                                        }
+                                      }}
+                                      className="rounded border-zinc-300 text-primary focus:ring-primary"
+                                    />
+                                    <span>{crs.courseName}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -3964,7 +4494,7 @@ export const DashboardHome = () => {
               </Card>
             </>
       );
-    } else if (user.role === "HOD") {
+    } else if (effectiveRole === "HOD") {
       if (window.location.pathname.endsWith("/subjects") || window.location.pathname.endsWith("/faculty")) {
         return (
               <div className="space-y-6">
@@ -4037,6 +4567,7 @@ export const DashboardHome = () => {
                   <div className="grid gap-6 lg:grid-cols-12">
                     {/* Left Column: Subject Registry */}
                     <div className="lg:col-span-5 space-y-6">
+                      {!isReadOnly && (
                       <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
                         <CardHeader>
                           <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">Subject Registry</CardTitle>
@@ -4066,7 +4597,7 @@ export const DashboardHome = () => {
                               />
                             </div>                            <div className="space-y-1">
                               <Label htmlFor="subType" className="text-zinc-700 dark:text-zinc-300 text-xs">Subject Type</Label>
-                              <select
+                               <select
                                 id="subType"
                                 value={newSubjectType}
                                 onChange={(e) => setNewSubjectType(e.target.value)}
@@ -4074,14 +4605,29 @@ export const DashboardHome = () => {
                               >
                                 <option value="regular">Regular Subject</option>
                                 <option value="language">Language Subject</option>
+                                <option value="specialization">Specialization Subject</option>
                               </select>
                             </div>
+                            {newSubjectType === "specialization" && (
+                              <div className="space-y-1">
+                                <Label htmlFor="subSpecialization" className="text-zinc-700 dark:text-zinc-300 text-xs">Specialization Name</Label>
+                                <Input
+                                  id="subSpecialization"
+                                  type="text"
+                                  placeholder="e.g. Data Science"
+                                  value={newSubjectSpecialization}
+                                  onChange={(e) => setNewSubjectSpecialization(e.target.value)}
+                                  className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
+                                />
+                              </div>
+                            )}
                             <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 w-full">
                               Create Subject
                             </Button>
                           </form>
                         </CardContent>
                       </Card>
+                      )}
 
                       {/* Created Subjects Table */}
                       <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 bg-white dark:bg-zinc-950 space-y-3">
@@ -4093,7 +4639,7 @@ export const DashboardHome = () => {
                                 <th className="py-2 px-3">Code</th>
                                 <th className="py-2 px-3">Subject Name</th>
                                 <th className="py-2 px-3">Type</th>
-                                <th className="py-2 px-3 text-right">Action</th>
+                                {!isReadOnly && <th className="py-2 px-3 text-right">Action</th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -4107,8 +4653,9 @@ export const DashboardHome = () => {
                                     <td className="py-2 px-3 font-mono font-bold">{sub.subjectId}</td>
                                     <td className="py-2 px-3">{sub.name}</td>
                                     <td className="py-2 px-3 font-semibold uppercase text-[10px] text-zinc-500">
-                                      {sub.subjectType === 'language' ? 'Language' : 'Regular'}
+                                      {sub.subjectType === 'language' ? 'Language' : sub.subjectType === 'specialization' ? `Specialization (${sub.specialization})` : 'Regular'}
                                     </td>
+                                    {!isReadOnly && (
                                     <td className="py-2 px-3 text-right space-x-1.5">
                                       <button
                                         type="button"
@@ -4117,6 +4664,7 @@ export const DashboardHome = () => {
                                           setNewSubjectId(sub.subjectId);
                                           setNewSubjectName(sub.name);
                                           setNewSubjectType(sub.subjectType);
+                                          setNewSubjectSpecialization(sub.specialization || "");
                                         }}
                                         className="text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-850 p-1 rounded"
                                       >
@@ -4130,6 +4678,7 @@ export const DashboardHome = () => {
                                         <Trash2 className="h-3.5 w-3.5" />
                                       </button>
                                     </td>
+                                    )}
                                   </tr>
                                 ))
                               )}
@@ -4141,12 +4690,14 @@ export const DashboardHome = () => {
 
                     {/* Right Column: Faculty Allocation */}
                     <div className="lg:col-span-7 space-y-6">
+                      {!isReadOnly && (
                       <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
                         <CardHeader>
                           <CardTitle className="text-zinc-900 dark:text-white text-xs font-semibold">{editingAllocation ? "Edit Faculty Allocation" : "Map Faculty to Subject"}</CardTitle>
                           <CardDescription className="text-[10px] text-zinc-500 text-zinc-500">Allocate subjects to respective faculty members per section (session)</CardDescription>
                         </CardHeader>
-                        <CardContent>                          <form 
+                        <CardContent>
+                          <form 
                             onSubmit={onCreateSubjectAllocation} 
                             className={`grid gap-4 ${sections.length > 0 ? "sm:grid-cols-3" : "sm:grid-cols-2"} items-end`}
                           >
@@ -4199,6 +4750,7 @@ export const DashboardHome = () => {
                             </form>
                         </CardContent>
                       </Card>
+                      )}
 
                       {/* Active Allocations Registry */}
                       <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 bg-white dark:bg-zinc-950 space-y-3">
@@ -4210,7 +4762,7 @@ export const DashboardHome = () => {
                                 <th className="py-2 px-3">Subject</th>
                                 <th className="py-2 px-3">Section</th>
                                 <th className="py-2 px-3">Faculty Member</th>
-                                <th className="py-2 px-3 text-right">Action</th>
+                                {!isReadOnly && <th className="py-2 px-3 text-right">Action</th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -4234,27 +4786,29 @@ export const DashboardHome = () => {
                                       <div className="font-medium text-zinc-900 dark:text-white">{alloc.faculty?.fullName}</div>
                                       <div className="text-[10px] text-zinc-450 dark:text-zinc-500">{alloc.faculty?.email}</div>
                                     </td>
-                                    <td className="py-2 px-3 text-right space-x-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingAllocation(alloc);
-                                          setSelectedAllocSubjectId(alloc.subject?._id || "");
-                                          setSelectedAllocSectionId(alloc.section?._id || "");
-                                          setSelectedAllocFacultyId(alloc.faculty?._id || "");
-                                        }}
-                                        className="text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-850 p-1 rounded"
-                                      >
-                                        <Edit className="h-3.5 w-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => onDeleteSubjectAllocation(alloc._id)}
-                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-1 rounded"
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </td>
+                                    {!isReadOnly && (
+                                      <td className="py-2 px-3 text-right space-x-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingAllocation(alloc);
+                                            setSelectedAllocSubjectId(alloc.subject?._id || "");
+                                            setSelectedAllocSectionId(alloc.section?._id || "");
+                                            setSelectedAllocFacultyId(alloc.faculty?._id || "");
+                                          }}
+                                          className="text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-850 p-1 rounded"
+                                        >
+                                          <Edit className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => onDeleteSubjectAllocation(alloc._id)}
+                                          className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-1 rounded"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      </td>
+                                    )}
                                   </tr>
                                 ))
                               )}
@@ -4282,32 +4836,34 @@ export const DashboardHome = () => {
         return (
           <div className="space-y-6">
             {/* Tab Header Selector */}
-            <div className="flex border-b border-zinc-200 dark:border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setHodAttendanceSubTab("consolidated")}
-                className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
-                  hodAttendanceSubTab === "consolidated"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-zinc-500 dark:text-zinc-400"
-                }`}
-              >
-                Consolidated Ledger
-              </button>
-              <button
-                type="button"
-                onClick={() => setHodAttendanceSubTab("daily")}
-                className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
-                  hodAttendanceSubTab === "daily"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-zinc-500 dark:text-zinc-400"
-                }`}
-              >
-                Daily Attendance Editor
-              </button>
-            </div>
+            {user?.role !== "Office Assistant" && (
+              <div className="flex border-b border-zinc-200 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setHodAttendanceSubTab("consolidated")}
+                  className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
+                    hodAttendanceSubTab === "consolidated"
+                      ? "border-primary text-primary"
+                      : "border-transparent text-zinc-500 dark:text-zinc-400"
+                  }`}
+                >
+                  Consolidated Ledger
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHodAttendanceSubTab("daily")}
+                  className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
+                    hodAttendanceSubTab === "daily"
+                      ? "border-primary text-primary"
+                      : "border-transparent text-zinc-500 dark:text-zinc-400"
+                  }`}
+                >
+                  Daily Attendance Editor
+                </button>
+              </div>
+            )}
 
-            {hodAttendanceSubTab === "consolidated" ? (
+            {hodAttendanceSubTab === "consolidated" || user?.role === "Office Assistant" ? (
               <>
                 <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
               <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 pb-4 border-b border-zinc-100 dark:border-zinc-900">
@@ -4869,31 +5425,66 @@ export const DashboardHome = () => {
                             {hodDailyIsMarked ? `Originally marked by: ${hodDailyFacultyName}` : `Assigned Faculty: ${hodDailyFacultyName}`}
                           </div>
                         </div>
-                        <div className="flex space-x-2 mt-2 sm:mt-0">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setHodDailyStudents(prev => prev.map(s => ({ ...s, status: "present" })));
-                            }}
-                            className="h-7 text-[10px] border-zinc-200 hover:bg-zinc-100"
-                          >
-                            Mark All Present
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setHodDailyStudents(prev => prev.map(s => ({ ...s, status: "absent" })));
-                            }}
-                            className="h-7 text-[10px] border-zinc-200 hover:bg-zinc-100"
-                          >
-                            Mark All Absent
-                          </Button>
-                        </div>
+                        {!isReadOnly && (
+                          <div className="flex space-x-2 mt-2 sm:mt-0">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setHodDailyStudents(prev => prev.map(s => ({ ...s, status: "present" })));
+                              }}
+                              className="h-7 text-[10px] border-zinc-200 hover:bg-zinc-100"
+                            >
+                              Mark All Present
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setHodDailyStudents(prev => prev.map(s => ({ ...s, status: "absent" })));
+                              }}
+                              className="h-7 text-[10px] border-zinc-200 hover:bg-zinc-100"
+                            >
+                              Mark All Absent
+                            </Button>
+                          </div>
+                        )}
                       </div>
+
+                      {hodDailyStudents.filter(s => s.status === 'absent').length > 0 && (
+                        <div className="bg-red-50/40 dark:bg-red-950/10 border border-red-200/50 dark:border-red-900/30 rounded-lg p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2 text-xs font-semibold text-red-800 dark:text-red-400">
+                              <AlertCircle className="h-4 w-4 shrink-0" />
+                              <span>Absentees ({hodDailyStudents.filter(s => s.status === 'absent').length} Students)</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              onClick={() => {
+                                const subjectObj = hodSubjects.find(s => s._id === hodDailySelectedSubjectId);
+                                const subjectName = subjectObj ? `${subjectObj.name} (${subjectObj.subjectId})` : 'Subject';
+                                const absList = hodDailyStudents.filter(s => s.status === 'absent');
+                                const text = `Absentees List - ${subjectName}\nDate: ${hodDailySelectedDate}\n\n` + 
+                                  absList.map((s, idx) => `${idx + 1}. ${s.studentId || s.admissionNumber} - ${s.fullName}`).join('\n') +
+                                  `\n\nTotal Absentees: ${absList.length}`;
+                                navigator.clipboard.writeText(text);
+                                toast.success("Absentees list copied to clipboard!");
+                              }}
+                              className="h-6 text-[10px] bg-red-100 hover:bg-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/65 text-red-800 dark:text-red-300 border-red-300 dark:border-red-800 flex items-center space-x-1"
+                            >
+                              <Copy className="h-3 w-3" />
+                              <span>Copy Absentees List</span>
+                            </Button>
+                          </div>
+                          <div className="text-[11px] text-red-750 dark:text-red-300/80 font-medium max-h-16 overflow-y-auto pr-2">
+                            {hodDailyStudents.filter(s => s.status === 'absent').map(s => `${s.studentId || s.admissionNumber} - ${s.fullName}`).join(', ')}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
                         <table className="w-full text-left border-collapse text-xs">
@@ -4921,6 +5512,7 @@ export const DashboardHome = () => {
                                   <td className="py-2 px-3 text-center flex items-center justify-center space-x-1.5 h-10">
                                     <button
                                       type="button"
+                                      disabled={isReadOnly}
                                       onClick={() => {
                                         const updated = [...hodDailyStudents];
                                         updated[idx].status = "present";
@@ -4930,12 +5522,13 @@ export const DashboardHome = () => {
                                         row.status === "present"
                                           ? "bg-emerald-500 border-emerald-500 text-white shadow-sm"
                                           : "bg-white dark:bg-zinc-900 border-zinc-200 text-zinc-650 hover:bg-zinc-55"
-                                      }`}
+                                      } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : ''}`}
                                     >
                                       Present
                                     </button>
                                     <button
                                       type="button"
+                                      disabled={isReadOnly}
                                       onClick={() => {
                                         const updated = [...hodDailyStudents];
                                         updated[idx].status = "absent";
@@ -4945,7 +5538,7 @@ export const DashboardHome = () => {
                                         row.status === "absent"
                                           ? "bg-red-500 border-red-500 text-white shadow-sm"
                                           : "bg-white dark:bg-zinc-900 border-zinc-200 text-zinc-650 hover:bg-zinc-55"
-                                      }`}
+                                      } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : ''}`}
                                     >
                                       Absent
                                     </button>
@@ -4957,16 +5550,18 @@ export const DashboardHome = () => {
                         </table>
                       </div>
 
-                      <div className="flex justify-end pt-2">
-                        <Button
-                          type="button"
-                          onClick={onSaveHODDailyAttendance}
-                          disabled={hodDailyStudents.length === 0}
-                          className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-9 font-semibold"
-                        >
-                          Save Attendance Register
-                        </Button>
-                      </div>
+                      {!isReadOnly && (
+                        <div className="flex justify-end pt-2">
+                          <Button
+                            type="button"
+                            onClick={onSaveHODDailyAttendance}
+                            disabled={hodDailyStudents.length === 0}
+                            className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-9 font-semibold"
+                          >
+                            Save Attendance Register
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </CardContent>
@@ -5474,99 +6069,103 @@ export const DashboardHome = () => {
               >
                 Dynamic Consolidation Sheets
               </button>
-              <button
-                type="button"
-                onClick={() => setHodIaActiveSubTab("manage")}
-                className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
-                  hodIaActiveSubTab === "manage"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-                }`}
-              >
-                Manage Assessments
-              </button>
+              {user?.role !== "Office Assistant" && (
+                <button
+                  type="button"
+                  onClick={() => setHodIaActiveSubTab("manage")}
+                  className={`py-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
+                    hodIaActiveSubTab === "manage"
+                      ? "border-primary text-primary"
+                      : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
+                  }`}
+                >
+                  {isReadOnly ? "Internal Assessments" : "Manage Assessments"}
+                </button>
+              )}
             </div>
 
-            {hodIaActiveSubTab === "manage" ? (
+            {hodIaActiveSubTab === "manage" && user?.role !== "Office Assistant" ? (
               <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
-                {/* Left side: Create Assessment Form */}
-                <div className="lg:col-span-5 space-y-6">
-                  <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-                    <CardHeader>
-                      <CardTitle className="text-zinc-900 dark:text-white text-sm font-semibold flex items-center space-x-2">
-                        <PlusCircle className="h-5 w-5 text-zinc-400" />
-                        <span>Create Internal Assessment</span>
-                      </CardTitle>
-                      <CardDescription className="text-xs text-zinc-500">
-                        Register a new internal exam session for a student batch & semester.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <form onSubmit={createHODInternalAssessment} className="space-y-4 text-xs">
-                        <div className="space-y-1">
-                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Assessment Title *</Label>
-                          <Input
-                            type="text"
-                            placeholder="e.g. IA-1, IA-2, Model Exam"
-                            value={hodIaTitle}
-                            onChange={(e) => setHodIaTitle(e.target.value)}
-                            className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
-                          />
-                        </div>
+                {/* Left side: Create Assessment Form (HOD/Admin only) */}
+                {!isReadOnly && (
+                  <div className="lg:col-span-5 space-y-6">
+                    <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950">
+                      <CardHeader>
+                        <CardTitle className="text-zinc-900 dark:text-white text-sm font-semibold flex items-center space-x-2">
+                          <PlusCircle className="h-5 w-5 text-zinc-400" />
+                          <span>Create Internal Assessment</span>
+                        </CardTitle>
+                        <CardDescription className="text-xs text-zinc-500">
+                          Register a new internal exam session for a student batch & semester.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <form onSubmit={createHODInternalAssessment} className="space-y-4 text-xs">
+                          <div className="space-y-1">
+                            <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Assessment Title *</Label>
+                            <Input
+                              type="text"
+                              placeholder="e.g. IA-1, IA-2, Model Exam"
+                              value={hodIaTitle}
+                              onChange={(e) => setHodIaTitle(e.target.value)}
+                              className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
+                            />
+                          </div>
 
-                        <div className="space-y-1">
-                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Batch *</Label>
-                          <select
-                            className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
-                            value={hodIaSelectedBatch?._id || ""}
-                            onChange={(e) => {
-                              const b = batches.find(x => x._id === e.target.value);
-                              setHodIaSelectedBatch(b || null);
-                            }}
-                          >
-                            <option value="">-- Select Batch --</option>
-                            {batches.map(b => (
-                              <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
-                            ))}
-                          </select>
-                        </div>
+                          <div className="space-y-1">
+                            <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Batch *</Label>
+                            <select
+                              className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                              value={hodIaSelectedBatch?._id || ""}
+                              onChange={(e) => {
+                                const b = batches.find(x => x._id === e.target.value);
+                                setHodIaSelectedBatch(b || null);
+                              }}
+                            >
+                              <option value="">-- Select Batch --</option>
+                              {batches.map(b => (
+                                <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
+                              ))}
+                            </select>
+                          </div>
 
-                        <div className="space-y-1">
-                          <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Semester *</Label>
-                          <select
-                            className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
-                            disabled={!hodIaSelectedBatch}
-                            value={hodIaSelectedSemester?._id || ""}
-                            onChange={(e) => {
-                              const s = (hodSemesters || []).find(x => x._id === e.target.value);
-                              setHodIaSelectedSemester(s || null);
-                            }}
-                          >
-                            <option value="">-- Select Semester --</option>
-                            {(hodSemesters || []).map(s => (
-                              <option key={s._id} value={s._id}>{s.name}</option>
-                            ))}
-                          </select>
-                        </div>
+                          <div className="space-y-1">
+                            <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Semester *</Label>
+                            <select
+                              className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                              disabled={!hodIaSelectedBatch}
+                              value={hodIaSelectedSemester?._id || ""}
+                              onChange={(e) => {
+                                const s = (hodSemesters || []).find(x => x._id === e.target.value);
+                                setHodIaSelectedSemester(s || null);
+                              }}
+                            >
+                              <option value="">-- Select Semester --</option>
+                              {(hodSemesters || []).map(s => (
+                                <option key={s._id} value={s._id}>{s.name}</option>
+                              ))}
+                            </select>
+                          </div>
 
-                        <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 w-full h-8">
-                          Create Assessment
-                        </Button>
-                      </form>
-                    </CardContent>
-                  </Card>
-                </div>
+                          <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 w-full h-8">
+                            Create Assessment
+                          </Button>
+                        </form>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
 
                 {/* Right side: Assessment Registry */}
-                <div className="lg:col-span-7 space-y-6">
+                <div className={isReadOnly ? "lg:col-span-12 space-y-6" : "lg:col-span-7 space-y-6"}>
                   <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950">
                     <CardHeader>
                       <CardTitle className="text-zinc-900 dark:text-white text-sm font-semibold flex items-center space-x-2">
                         <BookOpen className="h-5 w-5 text-zinc-400" />
                         <span>Created Assessments Registry</span>
                       </CardTitle>
-                      <CardDescription className="text-xs text-zinc-500 text-zinc-500 text-zinc-500">
-                        View and manage active assessments configured for the semester.
+                      <CardDescription className="text-xs text-zinc-500">
+                        {isReadOnly ? "View active assessments configured for the semester." : "View and manage active assessments configured for the semester."}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -5577,17 +6176,17 @@ export const DashboardHome = () => {
                               <th className="py-2 px-3">Title</th>
                               <th className="py-2 px-3">Max Marks</th>
                               <th className="py-2 px-3">Created Date</th>
-                              <th className="py-2 px-3 text-right">Action</th>
+                              {!isReadOnly && <th className="py-2 px-3 text-right">Action</th>}
                             </tr>
                           </thead>
                           <tbody>
                             {hodIaLoading ? (
                               <tr>
-                                <td colSpan={5} className="py-4 text-center text-zinc-500 italic animate-pulse">Loading assessments...</td>
+                                <td colSpan={isReadOnly ? 4 : 5} className="py-4 text-center text-zinc-500 italic animate-pulse">Loading assessments...</td>
                               </tr>
                             ) : hodIaList.length === 0 ? (
                               <tr>
-                                <td colSpan={5} className="py-4 text-center text-zinc-500 italic">No assessments created for this semester.</td>
+                                <td colSpan={isReadOnly ? 4 : 5} className="py-4 text-center text-zinc-500 italic">No assessments created for this semester.</td>
                               </tr>
                             ) : (
                               hodIaList.map(ia => (
@@ -5595,15 +6194,17 @@ export const DashboardHome = () => {
                                     <td className="py-2 px-3 font-semibold text-zinc-900 dark:text-white">{ia.title}</td>
                                     <td className="py-2 px-3 font-mono">{ia.maxMarks}</td>
                                     <td className="py-2 px-3 text-zinc-500 dark:text-zinc-450">{new Date(ia.createdAt).toLocaleDateString()}</td>
-                                    <td className="py-2 px-3 text-right">
-                                      <button
-                                        type="button"
-                                        onClick={() => deleteHODInternalAssessment(ia._id)}
-                                        className="text-red-500 hover:text-red-700 hover:bg-red-550/20 dark:hover:bg-red-950/20 p-1 rounded"
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </td>
+                                    {!isReadOnly && (
+                                      <td className="py-2 px-3 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteHODInternalAssessment(ia._id)}
+                                          className="text-red-500 hover:text-red-700 hover:bg-red-550/20 dark:hover:bg-red-950/20 p-1 rounded"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      </td>
+                                    )}
                                   </tr>
                               ))
                             )}
@@ -5729,49 +6330,53 @@ export const DashboardHome = () => {
                         {/* Action Buttons Toolbar */}
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-zinc-50/50 dark:bg-zinc-900/10 rounded-lg border border-zinc-200 dark:border-zinc-800">
                           <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="h-8 bg-primary text-white text-xs font-semibold flex items-center space-x-1"
-                              onClick={() => {
-                                setDynColName("");
-                                setDynColType("attendance");
-                                setDynColSourceId("");
-                                setDynColFormula("");
-                                setIsDynColModalOpen(true);
-                              }}
-                            >
-                              <Plus className="h-4 w-4" />
-                              <span>Add Custom Column</span>
-                            </Button>
-                            
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-8 border-zinc-200 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-900/50 flex items-center space-x-1"
-                              onClick={() => {
-                                if (window.confirm("Are you sure you want to reset columns config to default?")) {
-                                  const defaultCols = [
-                                    { id: "col_attendance", name: "Attendance %", type: "attendance", formula: "", sourceId: "" },
-                                    { id: "col_assignments", name: "Assignments %", type: "assignment", formula: "", sourceId: "" }
-                                  ];
-                                  (dynIaSheetData.iaAssessments || []).forEach(ia => {
-                                    defaultCols.push({
-                                      id: `col_ia_${ia._id}`,
-                                      name: `${ia.title} (Max: ${dynIaSheetData.iaMaxMarks[ia._id] || 50})`,
-                                      type: "ia",
-                                      formula: "",
-                                      sourceId: ia._id
-                                    });
-                                  });
-                                  setDynIaSheetColumns(defaultCols);
-                                  setDynIaSheetCustomData([]);
-                                }
-                              }}
-                            >
-                              <span>Reset to Default</span>
-                            </Button>
+                            {!isReadOnly && (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="h-8 bg-primary text-white text-xs font-semibold flex items-center space-x-1"
+                                  onClick={() => {
+                                    setDynColName("");
+                                    setDynColType("attendance");
+                                    setDynColSourceId("");
+                                    setDynColFormula("");
+                                    setIsDynColModalOpen(true);
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  <span>Add Custom Column</span>
+                                </Button>
+                                
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 border-zinc-200 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-900/50 flex items-center space-x-1"
+                                  onClick={() => {
+                                    if (window.confirm("Are you sure you want to reset columns config to default?")) {
+                                      const defaultCols = [
+                                        { id: "col_attendance", name: "Attendance %", type: "attendance", formula: "", sourceId: "" },
+                                        { id: "col_assignments", name: "Assignments %", type: "assignment", formula: "", sourceId: "" }
+                                      ];
+                                      (dynIaSheetData.iaAssessments || []).forEach(ia => {
+                                        defaultCols.push({
+                                          id: `col_ia_${ia._id}`,
+                                          name: `${ia.title} (Max: ${dynIaSheetData.iaMaxMarks[ia._id] || 50})`,
+                                          type: "ia",
+                                          formula: "",
+                                          sourceId: ia._id
+                                        });
+                                      });
+                                      setDynIaSheetColumns(defaultCols);
+                                      setDynIaSheetCustomData([]);
+                                    }
+                                  }}
+                                >
+                                  <span>Reset to Default</span>
+                                </Button>
+                              </>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -5797,23 +6402,29 @@ export const DashboardHome = () => {
                               <span>Export Excel</span>
                             </Button>
 
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={dynIaSaving}
-                              className="h-8 bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs font-semibold flex items-center space-x-1"
-                              onClick={saveDynIaSheetConfig}
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                              <span>{dynIaSaving ? "Saving..." : "Save Sheet Config"}</span>
-                            </Button>
+                            {!isReadOnly && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={dynIaSaving}
+                                className="h-8 bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs font-semibold flex items-center space-x-1"
+                                onClick={saveDynIaSheetConfig}
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                                <span>{dynIaSaving ? "Saving..." : "Save Sheet Config"}</span>
+                              </Button>
+                            )}
                           </div>
                         </div>
 
                         {/* dynamic sheet table rendering */}
                         <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-950">
                           {(() => {
-                            let roster = [...(dynIaSheetData.students || [])];
+                            let roster = [...(dynIaSheetData.students || [])].sort((a, b) => {
+                              const regA = a.studentId || a.admissionNumber || "";
+                              const regB = b.studentId || b.admissionNumber || "";
+                              return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+                            });
                             
                             const filteredRoster = roster.filter(s => {
                               const q = dynIaSearchQuery.toLowerCase().trim();
@@ -6711,6 +7322,7 @@ export const DashboardHome = () => {
                   {!selectedBatch ? (
                     <div className="space-y-6">
                       {/* Create Batch Form */}
+                      {!isReadOnly && (
                       <form onSubmit={onCreateBatch} className="border border-zinc-150 dark:border-zinc-850 p-4 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/10 space-y-3">
                         <div className="flex items-center justify-between">
                           <h4 className="font-semibold text-zinc-900 dark:text-white text-sm">Create New Student Batch</h4>
@@ -6744,6 +7356,7 @@ export const DashboardHome = () => {
                           Create Batch
                         </Button>
                       </form>
+                      )}
 
                       {/* Batches Table */}
                       <div className="overflow-x-auto">
@@ -6777,6 +7390,7 @@ export const DashboardHome = () => {
                                     >
                                       Manage
                                     </Button>
+                                    {!isReadOnly && (
                                     <Button
                                       type="button"
                                       variant="ghost"
@@ -6786,6 +7400,7 @@ export const DashboardHome = () => {
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
+                                    )}
                                   </td>
                                 </tr>
                               ))
@@ -6936,6 +7551,22 @@ export const DashboardHome = () => {
                                   )}
                                 </div>
                               </div>
+                              <div className="space-y-1">
+                                <Label htmlFor="studentSpecialization" className="text-zinc-700 dark:text-zinc-300">Specialization (Optional)</Label>
+                                <select
+                                  id="studentSpecialization"
+                                  value={newStudentSpecialization}
+                                  onChange={(e) => setNewStudentSpecialization(e.target.value)}
+                                  className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus:outline-none"
+                                >
+                                  <option value="">-- None / General --</option>
+                                  {batchSpecializations.map((spec, index) => (
+                                    <option key={index} value={spec}>
+                                      {spec}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                               <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200">
                                 Register Student
                               </Button>
@@ -6954,8 +7585,8 @@ export const DashboardHome = () => {
                               </div>                              {/* Visual template mock sheet */}
                               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2 rounded text-[10px] font-mono text-zinc-500 space-y-1">
                                 <p className="text-zinc-400 font-bold border-b pb-0.5 border-zinc-200 dark:border-zinc-800">Expected Columns (Edit in Excel):</p>
-                                <p>admissionNumber,studentId,fullName,email,language</p>
-                                <p>ADM202301,STU202301,John Doe,john@example.com,KAN101</p>
+                                <p>admissionNumber,studentId,fullName,email,language,specialization</p>
+                                <p>ADM202301,STU202301,John Doe,john@example.com,KAN101,Data Science</p>
                               </div>
 
                               {/* File Upload Option */}
@@ -6998,32 +7629,151 @@ export const DashboardHome = () => {
                           <div className="space-y-2">
                             <h4 className="font-semibold text-zinc-900 dark:text-white text-xs">Registered Students roster</h4>
                             <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg">
-                              <table className="w-full text-left border-collapse">                                <thead>
+                              <table className="w-full text-left border-collapse text-xs">
+                                <thead>
                                   <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold">
-                                    <th className="py-2 px-4">Admission No</th>
-                                    <th className="py-2 px-4">Student ID</th>
-                                    <th className="py-2 px-4">Full Name</th>
-                                    <th className="py-2 px-4">Email</th>
-                                    <th className="py-2 px-4">Language</th>
+                                    <th className="py-2.5 px-4">Admission No</th>
+                                    <th className="py-2.5 px-4">Student ID (Roll No)</th>
+                                    <th className="py-2.5 px-4">Full Name</th>
+                                    <th className="py-2.5 px-4">Email</th>
+                                    <th className="py-2.5 px-4">Language</th>
+                                    <th className="py-2.5 px-4">Specialization</th>
+                                    {!isReadOnly && <th className="py-2.5 px-4 text-right">Actions</th>}
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {students.length === 0 ? (
                                     <tr>
-                                      <td colSpan={6} className="py-4 text-center text-zinc-500">
+                                      <td colSpan={isReadOnly ? 6 : 7} className="py-8 text-center text-zinc-500 italic">
                                         No students registered in this batch yet. Use forms above to add.
                                       </td>
                                     </tr>
                                   ) : (
-                                    students.map((s) => (
-                                      <tr key={s._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
-                                        <td className="py-2 px-4 font-mono font-semibold text-zinc-500">{s.admissionNumber || 'N/A'}</td>
-                                        <td className="py-2 px-4 font-mono font-semibold">{s.studentId || '—'}</td>
-                                        <td className="py-2 px-4">{s.fullName}</td>
-                                        <td className="py-2 px-4 text-zinc-500">{s.email}</td>
-                                        <td className="py-2 px-4 font-semibold uppercase text-[10px] text-zinc-600 dark:text-zinc-400">{s.language || 'kan'}</td>
-                                      </tr>
-                                    ))
+                                    students.map((s) => {
+                                      const isEditing = editingStudentId === s._id;
+                                      return (
+                                        <tr key={s._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
+                                          {isEditing ? (
+                                            <>
+                                              <td className="py-2 px-4">
+                                                <Input
+                                                  type="text"
+                                                  value={editStudentAdmissionNumber}
+                                                  onChange={(e) => setEditStudentAdmissionNumber(e.target.value)}
+                                                  className="h-8 text-xs bg-white dark:bg-zinc-950 font-mono"
+                                                />
+                                              </td>
+                                              <td className="py-2 px-4">
+                                                <Input
+                                                  type="text"
+                                                  value={editStudentIdVal}
+                                                  onChange={(e) => setEditStudentIdVal(e.target.value)}
+                                                  className="h-8 text-xs bg-white dark:bg-zinc-950 font-mono"
+                                                />
+                                              </td>
+                                              <td className="py-2 px-4">
+                                                <Input
+                                                  type="text"
+                                                  value={editStudentFullName}
+                                                  onChange={(e) => setEditStudentFullName(e.target.value)}
+                                                  className="h-8 text-xs bg-white dark:bg-zinc-950"
+                                                />
+                                              </td>
+                                              <td className="py-2 px-4">
+                                                <Input
+                                                  type="email"
+                                                  value={editStudentEmail}
+                                                  onChange={(e) => setEditStudentEmail(e.target.value)}
+                                                  className="h-8 text-xs bg-white dark:bg-zinc-950"
+                                                />
+                                              </td>
+                                              <td className="py-2 px-4">
+                                                <Input
+                                                  type="text"
+                                                  value={editStudentLanguage}
+                                                  onChange={(e) => setEditStudentLanguage(e.target.value)}
+                                                  className="h-8 text-xs bg-white dark:bg-zinc-950 font-mono uppercase"
+                                                />
+                                              </td>
+                                              <td className="py-2 px-4">
+                                                <select
+                                                  value={editStudentSpecialization}
+                                                  onChange={(e) => setEditStudentSpecialization(e.target.value)}
+                                                  className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus:outline-none"
+                                                >
+                                                  <option value="">-- None --</option>
+                                                  {batchSpecializations.map((spec, index) => (
+                                                    <option key={index} value={spec}>
+                                                      {spec}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                              </td>
+                                              <td className="py-2 px-4 text-right flex items-center justify-end space-x-1.5 h-12">
+                                                <Button
+                                                  type="button"
+                                                  size="xs"
+                                                  onClick={() => onUpdateStudent(s._id)}
+                                                  className="h-7 px-2.5 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                >
+                                                  Save
+                                                </Button>
+                                                <Button
+                                                  type="button"
+                                                  size="xs"
+                                                  variant="outline"
+                                                  onClick={() => setEditingStudentId(null)}
+                                                  className="h-7 px-2.5 text-[10px]"
+                                                >
+                                                  Cancel
+                                                </Button>
+                                              </td>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <td className="py-2.5 px-4 font-mono font-semibold text-zinc-500">{s.admissionNumber || 'N/A'}</td>
+                                              <td className="py-2.5 px-4 font-mono font-semibold text-zinc-700 dark:text-zinc-350">{s.studentId || '—'}</td>
+                                              <td className="py-2.5 px-4 font-medium">{s.fullName}</td>
+                                              <td className="py-2.5 px-4 text-zinc-500 font-mono text-[11px]">{s.email}</td>
+                                              <td className="py-2.5 px-4 font-bold uppercase text-[10px] text-zinc-500 dark:text-zinc-405">{s.language || 'kan'}</td>
+                                              <td className="py-2.5 px-4 text-zinc-600 dark:text-zinc-400 font-medium">{s.specialization || '—'}</td>
+                                              {!isReadOnly && (
+                                                <td className="py-2 px-4 text-right">
+                                                  <div className="flex justify-end space-x-1.5">
+                                                    <Button
+                                                      type="button"
+                                                      size="xs"
+                                                      variant="outline"
+                                                      onClick={() => {
+                                                        setEditingStudentId(s._id);
+                                                        setEditStudentAdmissionNumber(s.admissionNumber || "");
+                                                        setEditStudentIdVal(s.studentId || "");
+                                                        setEditStudentFullName(s.fullName || "");
+                                                        setEditStudentEmail(s.email || "");
+                                                        setEditStudentLanguage(s.language || "kan");
+                                                        setEditStudentSpecialization(s.specialization || "");
+                                                      }}
+                                                      className="h-6 px-2 text-[10px]"
+                                                    >
+                                                      Edit
+                                                    </Button>
+                                                    <Button
+                                                      type="button"
+                                                      size="xs"
+                                                      variant="destructive"
+                                                      onClick={() => onDeleteStudent(s._id)}
+                                                      className="h-6 px-2 text-[10px] bg-red-600 hover:bg-red-750 text-white border-transparent"
+                                                    >
+                                                      Delete
+                                                    </Button>
+                                                  </div>
+                                                </td>
+                                              )}
+                                            </>
+                                          )}
+                                        </tr>
+                                      );
+                                    })
                                   )}
                                 </tbody>
                               </table>
@@ -7037,22 +7787,101 @@ export const DashboardHome = () => {
                         <div className="space-y-6">
                           <div className="grid gap-6 md:grid-cols-2">
                             {/* Create Semester Form */}
-                            <form onSubmit={onCreateSemester} className="border border-zinc-150 dark:border-zinc-850 p-4 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/10 space-y-3">
-                              <h4 className="font-semibold text-zinc-900 dark:text-white text-xs">Create New Academic Semester</h4>
-                              <div className="space-y-2">
-                                <Label htmlFor="semName" className="text-zinc-700 dark:text-zinc-300">Semester Name / Level</Label>                                <Input
-                                  id="semName"
-                                  type="text"
-                                  placeholder="e.g. Semester 1"
-                                  value={newSemesterName}
-                                  onChange={(e) => setNewSemesterName(e.target.value)}
-                                  className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
-                                />
+                            {/* Manage Semesters Card */}
+                            <div className="border border-zinc-150 dark:border-zinc-850 p-4 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/10 space-y-3">
+                              <h4 className="font-semibold text-zinc-900 dark:text-white text-xs">Manage Academic Semesters</h4>
+                              {!isReadOnly && (
+                                <form onSubmit={onCreateSemester} className="space-y-2">
+                                  <Label htmlFor="semName" className="text-zinc-700 dark:text-zinc-300">Semester Name / Level</Label>
+                                  <div className="flex space-x-2">
+                                    <Input
+                                      id="semName"
+                                      type="text"
+                                      placeholder="e.g. Semester 1"
+                                      value={newSemesterName}
+                                      onChange={(e) => setNewSemesterName(e.target.value)}
+                                      className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
+                                    />
+                                    <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 shrink-0">
+                                      Add Semester
+                                    </Button>
+                                  </div>
+                                </form>
+                              )}
+                              
+                              <div className="space-y-1.5 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                                <span className="text-[10px] text-zinc-500 font-semibold">Semester List:</span>
+                                {semesters.length === 0 ? (
+                                  <p className="text-[10px] text-zinc-400 italic">No semesters created yet.</p>
+                                ) : (
+                                  <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                    {semesters.map(s => (
+                                      <div key={s._id} className="flex items-center justify-between p-1.5 rounded bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-850 text-xs">
+                                        {editingSemester === s._id && !isReadOnly ? (
+                                          <div className="flex items-center space-x-1.5 w-full">
+                                            <Input
+                                              type="text"
+                                              value={editSemesterName}
+                                              onChange={(e) => setEditSemesterName(e.target.value)}
+                                              className="h-7 text-xs px-1 w-full bg-white dark:bg-zinc-950 border-zinc-300 dark:border-zinc-700"
+                                            />
+                                            <Button
+                                              type="button"
+                                              size="xs"
+                                              onClick={() => onUpdateSemester(s._id, editSemesterName)}
+                                              className="h-7 px-2 text-[10px]"
+                                            >
+                                              Save
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              size="xs"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setEditingSemester(null);
+                                                setEditSemesterName("");
+                                              }}
+                                              className="h-7 px-2 text-[10px]"
+                                            >
+                                              Cancel
+                                            </Button>
+                                          </div>
+                                        ) : (
+                                          <>
+                                            <span className="font-semibold text-zinc-700 dark:text-zinc-300">{s.name}</span>
+                                            {!isReadOnly && (
+                                              <div className="flex space-x-1">
+                                                <Button
+                                                  type="button"
+                                                  size="xs"
+                                                  variant="outline"
+                                                  onClick={() => {
+                                                    setEditingSemester(s._id);
+                                                    setEditSemesterName(s.name);
+                                                  }}
+                                                  className="h-6 px-1.5 text-[10px]"
+                                                >
+                                                  Edit
+                                                </Button>
+                                                <Button
+                                                  type="button"
+                                                  size="xs"
+                                                  variant="destructive"
+                                                  onClick={() => onDeleteSemester(s._id)}
+                                                  className="h-6 px-1.5 text-[10px] bg-red-600 hover:bg-red-750 text-white border-transparent"
+                                                >
+                                                  Delete
+                                                </Button>
+                                              </div>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                              <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200">
-                                Add Semester
-                              </Button>
-                            </form>
+                            </div>
 
                             {/* Select Active Semester & Create Sections */}
                             <div className="border border-zinc-150 dark:border-zinc-850 p-4 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/10 space-y-3">
@@ -7074,33 +7903,99 @@ export const DashboardHome = () => {
                               </select>
 
                               {selectedSemester && (
-                                <form onSubmit={onCreateSection} className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                                  <Label htmlFor="secName" className="text-zinc-700 dark:text-zinc-300 font-semibold text-[11px]">Add Section (Optional)</Label>
-                                  <div className="flex space-x-2">                                    <Input
-                                      id="secName"
-                                      type="text"
-                                      placeholder="e.g. Section A"
-                                      value={newSectionName}
-                                      onChange={(e) => setNewSectionName(e.target.value)}
-                                      className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
-                                    />
-                                    <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 shrink-0">
-                                      Add Section
-                                    </Button>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5 pt-1">
-                                    <span className="text-[10px] text-zinc-500 font-semibold self-center mr-1">Created Sections:</span>
+                                <div className="space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                                  {!isReadOnly && (
+                                    <form onSubmit={onCreateSection} className="space-y-2">
+                                      <Label htmlFor="secName" className="text-zinc-700 dark:text-zinc-300 font-semibold text-[11px]">Add Section (Optional)</Label>
+                                      <div className="flex space-x-2">
+                                        <Input
+                                          id="secName"
+                                          type="text"
+                                          placeholder="e.g. Section A"
+                                          value={newSectionName}
+                                          onChange={(e) => setNewSectionName(e.target.value)}
+                                          className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
+                                        />
+                                        <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 shrink-0">
+                                          Add Section
+                                        </Button>
+                                      </div>
+                                    </form>
+                                  )}
+                                  
+                                  <div className="space-y-1.5 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                                    <span className="text-[10px] text-zinc-500 font-semibold">Section List:</span>
                                     {sections.length === 0 ? (
-                                      <span className="text-[10px] text-zinc-400 italic">None</span>
+                                      <p className="text-[10px] text-zinc-400 italic">No sections created for this semester.</p>
                                     ) : (
-                                      sections.map(sec => (
-                                        <span key={sec._id} className="px-1.5 py-0.5 rounded text-[10px] bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-850 text-zinc-700 dark:text-zinc-300 font-semibold">
-                                          {sec.name}
-                                        </span>
-                                      ))
+                                      <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                                        {sections.map(sec => (
+                                          <div key={sec._id} className="flex items-center justify-between p-1.5 rounded bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-850 text-xs">
+                                            {editingSection === sec._id && !isReadOnly ? (
+                                              <div className="flex items-center space-x-1.5 w-full">
+                                                <Input
+                                                  type="text"
+                                                  value={editSectionName}
+                                                  onChange={(e) => setEditSectionName(e.target.value)}
+                                                  className="h-7 text-xs px-1 w-full bg-white dark:bg-zinc-950 border-zinc-300 dark:border-zinc-700"
+                                                />
+                                                <Button
+                                                  type="button"
+                                                  size="xs"
+                                                  onClick={() => onUpdateSection(sec._id, editSectionName)}
+                                                  className="h-7 px-2 text-[10px]"
+                                                >
+                                                  Save
+                                                </Button>
+                                                <Button
+                                                  type="button"
+                                                  size="xs"
+                                                  variant="outline"
+                                                  onClick={() => {
+                                                    setEditingSection(null);
+                                                    setEditSectionName("");
+                                                  }}
+                                                  className="h-7 px-2 text-[10px]"
+                                                >
+                                                  Cancel
+                                                </Button>
+                                              </div>
+                                            ) : (
+                                              <>
+                                                <span className="font-semibold text-zinc-700 dark:text-zinc-300">{sec.name}</span>
+                                                {!isReadOnly && (
+                                                  <div className="flex space-x-1">
+                                                    <Button
+                                                      type="button"
+                                                      size="xs"
+                                                      variant="outline"
+                                                      onClick={() => {
+                                                        setEditingSection(sec._id);
+                                                        setEditSectionName(sec.name);
+                                                      }}
+                                                      className="h-6 px-1.5 text-[10px]"
+                                                    >
+                                                      Edit
+                                                    </Button>
+                                                    <Button
+                                                      type="button"
+                                                      size="xs"
+                                                      variant="destructive"
+                                                      onClick={() => onDeleteSection(sec._id)}
+                                                      className="h-6 px-1.5 text-[10px] bg-red-600 hover:bg-red-750 text-white border-transparent"
+                                                    >
+                                                      Delete
+                                                    </Button>
+                                                  </div>
+                                                )}
+                                              </>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
                                     )}
                                   </div>
-                                </form>
+                                </div>
                               )}
                             </div>
                           </div>                          {/* Student Section Assignment Grid */}
@@ -7111,6 +8006,70 @@ export const DashboardHome = () => {
                                   <h4 className="font-semibold text-zinc-900 dark:text-white text-xs">Student Section Assignment - {selectedSemester.name}</h4>
                                   <p className="text-[10px] text-zinc-500">Assign students to sections. Click "Save Assignments" to persist your changes.</p>
                                 </div>
+                              </div>
+
+                              {/* Auto-Assign Section Counts Panel */}
+                              {!isReadOnly && sections.length > 0 && (
+                                <div className="p-3 bg-zinc-50/50 dark:bg-zinc-900/20 border border-zinc-150 dark:border-zinc-850 rounded-lg space-y-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                    <div>
+                                      <h5 className="font-semibold text-zinc-900 dark:text-white text-xs">Auto-Assign Roster to Sections</h5>
+                                      <p className="text-[10px] text-zinc-500">Enter the target student count limit for each section. Unassigned students will be distributed sequentially.</p>
+                                    </div>
+                                    <div className="flex items-center space-x-2 shrink-0">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="xs"
+                                        onClick={() => {
+                                          if (sections.length === 0) return;
+                                          const equalShare = Math.floor(students.length / sections.length);
+                                          const remainder = students.length % sections.length;
+                                          const dist = {};
+                                          sections.forEach((sec, idx) => {
+                                            dist[sec._id] = equalShare + (idx < remainder ? 1 : 0);
+                                          });
+                                          setAutoAssignCounts(dist);
+                                        }}
+                                        className="text-[10px] h-7"
+                                      >
+                                        Distribute Equally
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="xs"
+                                        onClick={handleAutoAssign}
+                                        className="text-[10px] h-7 bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                                      >
+                                        Run Auto-Assign
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
+                                    {sections.map(sec => (
+                                      <div key={sec._id} className="space-y-1">
+                                        <label className="text-[10px] font-semibold text-zinc-650 dark:text-zinc-400 block truncate" title={sec.name}>
+                                          {sec.name} Limit
+                                        </label>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          value={autoAssignCounts[sec._id] ?? ""}
+                                          onChange={(e) => {
+                                            const val = Math.max(0, parseInt(e.target.value) || 0);
+                                            setAutoAssignCounts(prev => ({ ...prev, [sec._id]: val }));
+                                          }}
+                                          className="h-8 text-xs font-mono font-bold w-full bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                          placeholder="0"
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                                <div></div>
                                 <div className="flex items-center space-x-2">
                                   <select
                                     className="flex h-8 rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-900 dark:text-white px-2 py-0.5 text-xs shadow-sm focus:outline-none"
@@ -7243,7 +8202,7 @@ export const DashboardHome = () => {
             </div>
         );
       }
-    } else if (user.role === "Faculty") {
+    } else if (effectiveRole === "Faculty") {
       if (window.location.pathname.endsWith("/grades")) {
         const availableSemesters = myAllocations
           .filter(a => a.course === selectedFacultyCourse)
@@ -8304,6 +9263,11 @@ export const DashboardHome = () => {
                                     <th className="py-2.5 px-3">Roll Number</th>
                                     <th className="py-2.5 px-3">Student Name</th>
                                     <th className="py-2.5 px-3">Language (Sub ID)</th>
+                                    <th className="py-2.5 px-3 text-center">
+                                      <div className="inline-flex items-center justify-center space-x-1" title="Type 1 for Present, 0 for Absent or paste an Excel column of 0s & 1s">
+                                        <span>Excel Code (0/1)</span>
+                                      </div>
+                                    </th>
                                     <th className="py-2.5 px-3 text-right">Attendance Status</th>
                                   </tr>
                                 </thead>
@@ -8313,7 +9277,7 @@ export const DashboardHome = () => {
                                     (s.studentId || "").toLowerCase().includes(facultyMarkSearch.toLowerCase())
                                   ).length === 0 ? (
                                     <tr>
-                                      <td colSpan={5} className="py-6 text-center text-zinc-500 italic">
+                                      <td colSpan={6} className="py-6 text-center text-zinc-500 italic">
                                         No students matching "{facultyMarkSearch}" found.
                                       </td>
                                     </tr>
@@ -8321,12 +9285,36 @@ export const DashboardHome = () => {
                                     attendanceStudents.filter(s => 
                                       s.fullName.toLowerCase().includes(facultyMarkSearch.toLowerCase()) ||
                                       (s.studentId || "").toLowerCase().includes(facultyMarkSearch.toLowerCase())
-                                    ).map((student) => (
+                                    ).map((student, studentIdx) => (
                                       <tr key={student._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
                                         <td className="py-2 px-3 font-mono font-semibold text-zinc-500">{student.admissionNumber || 'N/A'}</td>
                                         <td className="py-2 px-3 font-mono font-bold">{student.studentId || '—'}</td>
                                         <td className="py-2 px-3">{student.fullName}</td>
                                         <td className="py-2 px-3 font-bold uppercase text-[10px] text-zinc-500 dark:text-zinc-450">{student.language}</td>
+                                        <td className="py-2 px-3 text-center">
+                                          <input
+                                            type="text"
+                                            maxLength={1}
+                                            value={student.status === 'present' ? '1' : student.status === 'absent' ? '0' : ''}
+                                            onChange={(e) => {
+                                              const val = e.target.value.trim();
+                                              if (val === '1' || val.toLowerCase() === 'p') {
+                                                setAttendanceStudents(prev =>
+                                                  prev.map(s => (s._id === student._id ? { ...s, status: 'present' } : s))
+                                                );
+                                              } else if (val === '0' || val.toLowerCase() === 'a') {
+                                                setAttendanceStudents(prev =>
+                                                  prev.map(s => (s._id === student._id ? { ...s, status: 'absent' } : s))
+                                                );
+                                              }
+                                            }}
+                                            onPaste={(e) => handleExcelColumnPaste(e, studentIdx)}
+                                            disabled={!attendanceEditable}
+                                            className="w-12 h-7 text-center font-mono font-bold text-xs rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary shadow-sm disabled:opacity-60"
+                                            placeholder="0/1"
+                                            title="Type 1 (Present) / 0 (Absent) or paste a copied column from Excel"
+                                          />
+                                        </td>
                                         <td className="py-2 px-3 text-right">
                                           <div className="inline-flex rounded-md shadow-sm">
                                             <button
@@ -9002,21 +9990,12 @@ export const DashboardHome = () => {
           </h2>
           <p className="text-xs text-zinc-500 font-medium">
             DMS Dashboard 
- {user.role === "Admin" ? "System Administration" : `Department: ${user.department || "N/A"} | College: ${user.college || "N/A"}`}
+ {user.role === "Admin"
+   ? `System Administration${adminActiveCollege ? ` | Scoped View: ${adminActiveCourse || "Campus Overview"} (${adminActiveCollege})` : ""}`
+   : `Department: ${user.department || "N/A"} | College: ${user.college || "N/A"}`}
           </p>
         </div>
-        {user.role !== "Faculty" && user.role !== "HOD" && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setRecentActivitiesOpen(!recentActivitiesOpen)}
-            className="text-xs flex items-center space-x-1.5 h-8 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300"
-          >
-            <Activity className="h-3.5 w-3.5" />
-            <span>{recentActivitiesOpen ? "Hide Logs" : "Show Logs"}</span>
-          </Button>
-        )}
+
       </div>
 
       {user.role !== "Faculty" && (
@@ -9082,7 +10061,7 @@ export const DashboardHome = () => {
           </div>              )}
 
       </div>
-      {user.role === "Admin" && (
+      {effectiveRole === "Admin" && (
         <div className="mt-8 space-y-4">
           {/* Tab Triggers */}
           <div className="flex border-b border-zinc-200 dark:border-zinc-800 space-x-6 text-sm">
@@ -9133,7 +10112,8 @@ export const DashboardHome = () => {
           {/* Tab Contents */}
           <div className="transition-all duration-300">
             {activeTab === "staff" && (
-              <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+              <>
+                <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
                 <CardHeader>
                   <CardTitle className="text-zinc-900 dark:text-white text-base">Registered staff & Faculty Accounts</CardTitle>
                   <CardDescription className="text-zinc-500 text-xs">
@@ -9171,8 +10151,32 @@ export const DashboardHome = () => {
                                 {u.role}
                               </span>
                             </td>
-                            <td className="py-2 px-4">{u.college || "N/A"}</td>
-                            <td className="py-2 px-4">{u.department || "N/A"}</td>
+                             <td className="py-2 px-4">
+                              {u.role === "Office Assistant" && u.assignedColleges && u.assignedColleges.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {u.assignedColleges.map((c, idx) => (
+                                    <span key={idx} className="px-1.5 py-0.5 rounded text-[10px] bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 font-medium">
+                                      {c}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                u.college || "N/A"
+                              )}
+                            </td>
+                            <td className="py-2 px-4">
+                              {u.role === "Office Assistant" && u.assignedDepartments && u.assignedDepartments.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {u.assignedDepartments.map((d, idx) => (
+                                    <span key={idx} className="px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20 font-medium">
+                                      {d}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                u.department || "N/A"
+                              )}
+                            </td>
                             <td className="py-2 px-4 text-zinc-500">
                               {u.lastLogin ? new Date(u.lastLogin).toLocaleString() : "Never"}
                             </td>
@@ -9206,6 +10210,23 @@ export const DashboardHome = () => {
                             <td className="py-2 pl-4 text-right space-x-2">
                               {u.role !== "Admin" && (
                                 <>
+                                  {u.role === "Office Assistant" && (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-[11px] px-2 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900 inline-flex items-center"
+                                      onClick={() => {
+                                        setOaModalUser(u);
+                                        setOaModalColleges(u.assignedColleges || (u.college ? u.college.split(', ') : []));
+                                        setOaModalDepartments(u.assignedDepartments || (u.department ? u.department.split(', ') : []));
+                                        setIsOaScopeModalOpen(true);
+                                      }}
+                                    >
+                                      <SlidersHorizontal className="h-3 w-3 mr-1" />
+                                      <span>Allocate Scope</span>
+                                    </Button>
+                                  )}
                                   <Button
                                     type="button"
                                     variant="ghost"
@@ -9241,7 +10262,115 @@ export const DashboardHome = () => {
                   </table>
                 </CardContent>
               </Card>
-            )}
+
+              {/* Office Assistant Scope Allocation Modal */}
+              {isOaScopeModalOpen && oaModalUser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                  <div className="w-full max-w-lg rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 space-y-4 shadow-xl animate-in fade-in zoom-in duration-150 text-xs">
+                    <div className="space-y-1">
+                      <h3 className="text-base font-semibold text-zinc-900 dark:text-white flex items-center space-x-2">
+                        <SlidersHorizontal className="h-4 w-4 text-primary" />
+                        <span>Allocate Scope for {oaModalUser.fullName}</span>
+                      </h3>
+                      <p className="text-xs text-zinc-500">
+                        Allocate or deallocate multiple colleges and departments assigned to Employee ID <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">{oaModalUser.employeeId}</span>.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4 py-2">
+                      <div className="space-y-2">
+                        <Label className="font-semibold text-zinc-700 dark:text-zinc-300">
+                          Allocated Colleges
+                        </Label>
+                        <div className="flex flex-wrap gap-2 p-3 border border-zinc-200 dark:border-zinc-800 rounded-md bg-zinc-50 dark:bg-zinc-900/50 max-h-40 overflow-y-auto">
+                          {colleges.length === 0 ? (
+                            <span className="text-zinc-400 italic">No colleges available</span>
+                          ) : (
+                            colleges.map((col) => {
+                              const isChecked = oaModalColleges.includes(col.collegeName);
+                              return (
+                                <label key={col.collegeId || col._id} className="flex items-center space-x-1.5 text-xs cursor-pointer p-1.5 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setOaModalColleges([...oaModalColleges, col.collegeName]);
+                                      } else {
+                                        setOaModalColleges(oaModalColleges.filter(c => c !== col.collegeName));
+                                      }
+                                    }}
+                                    className="rounded border-zinc-300 text-primary focus:ring-primary"
+                                  />
+                                  <span className="font-medium">{col.collegeName}</span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="font-semibold text-zinc-700 dark:text-zinc-300">
+                          Allocated Departments / Courses
+                        </Label>
+                        <div className="flex flex-wrap gap-2 p-3 border border-zinc-200 dark:border-zinc-800 rounded-md bg-zinc-50 dark:bg-zinc-900/50 max-h-40 overflow-y-auto">
+                          {courses.length === 0 ? (
+                            <span className="text-zinc-400 italic">No departments available</span>
+                          ) : (
+                            courses.map((crs) => {
+                              const isChecked = oaModalDepartments.includes(crs.courseName);
+                              return (
+                                <label key={crs.courseId || crs._id} className="flex items-center space-x-1.5 text-xs cursor-pointer p-1.5 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setOaModalDepartments([...oaModalDepartments, crs.courseName]);
+                                      } else {
+                                        setOaModalDepartments(oaModalDepartments.filter(d => d !== crs.courseName));
+                                      }
+                                    }}
+                                    className="rounded border-zinc-300 text-primary focus:ring-primary"
+                                  />
+                                  <span className="font-medium">{crs.courseName}</span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end space-x-2 pt-2 border-t border-zinc-150 dark:border-zinc-850">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs border-zinc-200 dark:border-zinc-800"
+                        onClick={() => {
+                          setIsOaScopeModalOpen(false);
+                          setOaModalUser(null);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 text-xs bg-primary text-white hover:bg-primary/90"
+                        disabled={isOaSaving}
+                        onClick={onSaveOaScopeAllocations}
+                      >
+                        {isOaSaving ? "Saving..." : "Save Scope Allocations"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
             {activeTab === "courses" && (
               <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">

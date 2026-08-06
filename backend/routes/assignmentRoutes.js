@@ -13,7 +13,7 @@ const { authenticateUser, authorizeRoles } = require('../middleware/authMiddlewa
 router.use(authenticateUser);
 
 // HOD Consolidated Report Route
-router.get('/hod/consolidated', authorizeRoles('HOD'), getConsolidatedAssignmentsForHOD);
+router.get('/hod/consolidated', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), getConsolidatedAssignmentsForHOD);
 
 // Faculty only routes
 router.post('/', authorizeRoles('Faculty'), createAssignment);

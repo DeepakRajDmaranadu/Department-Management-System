@@ -13,6 +13,8 @@ const createUserSchema = z.object({
   ),
   department: z.string().trim().optional(),
   college: z.string().trim().optional(),
+  assignedColleges: z.array(z.string()).optional(),
+  assignedDepartments: z.array(z.string()).optional(),
   role: z.enum(['Admin', 'Principal', 'HOD', 'Faculty', 'Office Assistant'], {
     errorMap: () => ({ message: 'Invalid role' }),
   }),

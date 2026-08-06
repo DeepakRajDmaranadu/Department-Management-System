@@ -20,13 +20,13 @@ const {
 // All internal assessment operations require authenticated users
 router.use(authenticateUser);
 
-// HOD Only Routes
-router.post('/', authorizeRoles('HOD'), createAssessment);
-router.delete('/:id', authorizeRoles('HOD'), deleteAssessment);
-router.get('/hod/consolidated', authorizeRoles('HOD'), getHODConsolidatedReport);
-router.get('/hod/dynamic-sheet/export-all', authorizeRoles('HOD'), exportAllDynamicSheets);
-router.get('/hod/dynamic-sheet', authorizeRoles('HOD'), getDynamicSheetData);
-router.post('/hod/dynamic-sheet', authorizeRoles('HOD'), saveDynamicSheetConfig);
+// HOD Only Routes (and Admin)
+router.post('/', authorizeRoles('HOD', 'Admin'), createAssessment);
+router.delete('/:id', authorizeRoles('HOD', 'Admin'), deleteAssessment);
+router.get('/hod/consolidated', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), getHODConsolidatedReport);
+router.get('/hod/dynamic-sheet/export-all', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), exportAllDynamicSheets);
+router.get('/hod/dynamic-sheet', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), getDynamicSheetData);
+router.post('/hod/dynamic-sheet', authorizeRoles('HOD', 'Admin'), saveDynamicSheetConfig);
 
 // Faculty Only Routes
 router.get('/faculty/list', authorizeRoles('Faculty'), getFacultyAssessmentList);

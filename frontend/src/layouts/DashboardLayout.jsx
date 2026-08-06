@@ -44,7 +44,14 @@ const changePasswordSchema = z.object({
 });
 
 export const DashboardLayout = ({ children }) => {
-  const { user, logout } = useAuth();
+  const {
+    user,
+    logout,
+    adminActiveCollege,
+    adminActiveCourse,
+    setAdminActiveCollege,
+    setAdminActiveCourse
+  } = useAuth();
   const location = useLocation();
   const toast = useToast();
 
@@ -54,6 +61,28 @@ export const DashboardLayout = ({ children }) => {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
   const [passLoading, setPassLoading] = useState(false);
+  const [collegesList, setCollegesList] = useState([]);
+  const [coursesList, setCoursesList] = useState([]);
+
+  useEffect(() => {
+    if (user && (user.role === "Admin" || user.role === "Principal" || user.role === "Office Assistant")) {
+      const fetchCollegesAndCourses = async () => {
+        try {
+          const colRes = await api.get("/api/colleges");
+          if (colRes.data.success) {
+            setCollegesList(colRes.data.colleges || []);
+          }
+          const courseRes = await api.get("/api/courses");
+          if (courseRes.data.success) {
+            setCoursesList(courseRes.data.courses || []);
+          }
+        } catch (err) {
+          console.error("Failed to load colleges/courses scoping list", err);
+        }
+      };
+      fetchCollegesAndCourses();
+    }
+  }, [user]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -73,18 +102,35 @@ export const DashboardLayout = ({ children }) => {
 
   const getMenuItems = () => {
     switch (user.role) {
-      case "Admin":
-        return [
+      case "Admin": {
+        const items = [
           { title: "User Directory", path: "/dashboard/admin", icon: <Users className="h-4 w-4" /> },
-          { title: "Audit Trail", path: "/dashboard/admin/audit", icon: <ShieldAlert className="h-4 w-4" /> },
-          { title: "System Controls", path: "/dashboard/admin/settings", icon: <Settings className="h-4 w-4" /> },
         ];
-      case "Principal":
-        return [
+        if (adminActiveCollege && adminActiveCourse) {
+          items.push(
+            { title: "Department Hub", path: "/dashboard/hod", icon: <FolderTree className="h-4 w-4" /> },
+            { title: "Consolidated Attendance", path: "/dashboard/hod/attendance", icon: <CalendarCheck className="h-4 w-4" /> },
+            { title: "Consolidated Assignments", path: "/dashboard/hod/assignments", icon: <CheckCircle className="h-4 w-4" /> },
+            { title: "Consolidated IA Marks", path: "/dashboard/hod/grades", icon: <FileSpreadsheet className="h-4 w-4" /> },
+            { title: "Subject Allocation", path: "/dashboard/hod/subjects", icon: <FileSpreadsheet className="h-4 w-4" /> }
+          );
+        }
+        return items;
+      }
+      case "Principal": {
+        const items = [
           { title: "Campus Overview", path: "/dashboard/principal", icon: <LayoutDashboard className="h-4 w-4" /> },
-          { title: "Academic Audit", path: "/dashboard/principal/audit", icon: <FolderTree className="h-4 w-4" /> },
-          { title: "Directory", path: "/dashboard/principal/directory", icon: <Users className="h-4 w-4" /> },
         ];
+        if (adminActiveCollege && adminActiveCourse) {
+          items.push(
+            { title: "Consolidated Attendance", path: "/dashboard/hod/attendance", icon: <CalendarCheck className="h-4 w-4" /> },
+            { title: "Consolidated Assignments", path: "/dashboard/hod/assignments", icon: <CheckCircle className="h-4 w-4" /> },
+            { title: "Consolidated IA Marks", path: "/dashboard/hod/grades", icon: <FileSpreadsheet className="h-4 w-4" /> },
+            { title: "Subject Allocation", path: "/dashboard/hod/subjects", icon: <FileSpreadsheet className="h-4 w-4" /> }
+          );
+        }
+        return items;
+      }
       case "HOD":
         return [
           { title: "Department Hub", path: "/dashboard/hod", icon: <FolderTree className="h-4 w-4" /> },
@@ -100,12 +146,19 @@ export const DashboardLayout = ({ children }) => {
           { title: "Assignments", path: "/dashboard/faculty/assignments", icon: <CheckCircle className="h-4 w-4" /> },
           { title: "Academic Grades", path: "/dashboard/faculty/grades", icon: <FileSpreadsheet className="h-4 w-4" /> },
         ];
-      case "Office Assistant":
+      case "Office Assistant": {
+        if (adminActiveCollege && adminActiveCourse) {
+          return [
+            { title: "Consolidated Attendance", path: "/dashboard/hod/attendance", icon: <CalendarCheck className="h-4 w-4" /> },
+            { title: "Consolidated Assignments", path: "/dashboard/hod/assignments", icon: <CheckCircle className="h-4 w-4" /> },
+            { title: "Consolidated IA Marks", path: "/dashboard/hod/grades", icon: <FileSpreadsheet className="h-4 w-4" /> },
+            { title: "Subject Allocation", path: "/dashboard/hod/subjects", icon: <FileSpreadsheet className="h-4 w-4" /> },
+          ];
+        }
         return [
           { title: "Records Desk", path: "/dashboard/office", icon: <FileSpreadsheet className="h-4 w-4" /> },
-          { title: "Attendance Log", path: "/dashboard/office/attendance", icon: <CalendarCheck className="h-4 w-4" /> },
-          { title: "General Inward", path: "/dashboard/office/inward", icon: <BookOpen className="h-4 w-4" /> },
         ];
+      }
       default:
         return [];
     }
@@ -333,6 +386,93 @@ export const DashboardLayout = ({ children }) => {
             </div>
           </div>
         </header>
+
+        {(user.role === "Admin" || user.role === "Principal" || user.role === "Office Assistant") && (
+          <div className="bg-zinc-50 dark:bg-zinc-950 border-b border-border px-8 py-3 flex flex-wrap items-center justify-between gap-4 text-xs">
+            <div className="flex items-center space-x-2 font-medium text-zinc-700 dark:text-zinc-300">
+              <span className="bg-primary/10 text-primary px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Scope</span>
+              <span className="font-semibold text-zinc-900 dark:text-white">Active Organization Boundaries:</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              {/* College Dropdown */}
+              <div className="flex items-center space-x-2">
+                <label className="text-zinc-500 font-semibold dark:text-zinc-400">College:</label>
+                <select
+                  disabled={user.role === "Principal"}
+                  value={adminActiveCollege}
+                  onChange={(e) => {
+                    setAdminActiveCollege(e.target.value);
+                    setAdminActiveCourse(""); // Reset course when college changes
+                  }}
+                  className="flex h-8 w-60 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-80"
+                >
+                  {user.role === "Principal" ? (
+                    <option value={user.college}>{user.college}</option>
+                  ) : user.role === "Office Assistant" && (user.assignedColleges?.length > 0 || user.college) ? (
+                    <>
+                      <option value="">-- Select Allocated College --</option>
+                      {collegesList
+                        .filter((col) => {
+                          const assigned = user.assignedColleges || (user.college ? user.college.split(", ") : []);
+                          return assigned.includes(col.collegeName) || assigned.includes(col.collegeId);
+                        })
+                        .map((col) => (
+                          <option key={col._id} value={col.collegeName}>
+                            {col.collegeName}
+                          </option>
+                        ))}
+                    </>
+                  ) : (
+                    <>
+                      <option value="">-- All Colleges --</option>
+                      {collegesList.map((col) => (
+                        <option key={col._id} value={col.collegeName}>
+                          {col.collegeName}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Course/Department Dropdown */}
+              <div className="flex items-center space-x-2">
+                <label className="text-zinc-500 font-semibold dark:text-zinc-400">Department:</label>
+                <select
+                  disabled={!adminActiveCollege}
+                  value={adminActiveCourse}
+                  onChange={(e) => setAdminActiveCourse(e.target.value)}
+                  className="flex h-8 w-60 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-50"
+                >
+                  <option value="">-- Select Department / Course --</option>
+                  {coursesList
+                    .filter((c) => {
+                      if (!adminActiveCollege) return false;
+                      if (user.role === "Office Assistant") {
+                        const assignedDepts = user.assignedDepartments || (user.department ? user.department.split(", ") : []);
+                        if (assignedDepts.length > 0) {
+                          const isAllowed = assignedDepts.includes(c.courseName) || assignedDepts.includes(c.courseId);
+                          if (!isAllowed) return false;
+                        }
+                      }
+                      const matchedCollege = collegesList.find(
+                        (col) => col.collegeName === adminActiveCollege || col.collegeId === adminActiveCollege
+                      );
+                      return (
+                        c.college === adminActiveCollege ||
+                        (matchedCollege && (c.college === matchedCollege.collegeName || c.college === matchedCollege.collegeId))
+                      );
+                    })
+                    .map((c) => (
+                      <option key={c._id} value={c.courseName}>
+                        {c.courseName}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto p-8">{children}</main>
       </div>

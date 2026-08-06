@@ -8,7 +8,7 @@ const Assignment = require('../models/Assignment');
 // Create a new subject under a semester
 exports.createSubject = async (req, res) => {
   try {
-    const { subjectId, name, semesterId, subjectType } = req.body;
+    const { subjectId, name, semesterId, subjectType, specialization } = req.body;
 
     if (!subjectId || !name || !semesterId) {
       return res.status(400).json({ success: false, message: 'Subject ID, Name, and Semester are required' });
@@ -20,12 +20,23 @@ exports.createSubject = async (req, res) => {
     }
 
     const cleanType = subjectType ? subjectType.toLowerCase().trim() : 'regular';
-    if (!['regular', 'language'].includes(cleanType)) {
-      return res.status(400).json({ success: false, message: 'Subject type must be either regular or language' });
+    if (!['regular', 'language', 'specialization'].includes(cleanType)) {
+      return res.status(400).json({ success: false, message: 'Subject type must be regular, language, or specialization' });
     }
 
-    const course = req.user.department;
-    const college = req.user.college;
+    if (cleanType === 'specialization' && (!specialization || !specialization.trim())) {
+      return res.status(400).json({ success: false, message: 'Specialization name is required for specialization subjects' });
+    }
+
+    const course = req.user.role === 'Admin' ? (req.body.course || req.body.department) : req.user.department;
+    const college = req.user.role === 'Admin' ? req.body.college : req.user.college;
+
+    if (!course) {
+      return res.status(400).json({ success: false, message: 'Course/Department parameter is required' });
+    }
+    if (req.user.role === 'Admin' && !college) {
+      return res.status(400).json({ success: false, message: 'College parameter is required for Admin' });
+    }
 
     const subject = new Subject({
       subjectId: subjectId.toUpperCase(),
@@ -34,6 +45,7 @@ exports.createSubject = async (req, res) => {
       course,
       college,
       subjectType: cleanType,
+      specialization: cleanType === 'specialization' ? specialization.trim() : undefined,
     });
 
     await subject.save();
@@ -107,9 +119,15 @@ exports.createAllocation = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Faculty member not found' });
     }
 
-    // Check college matches HOD college
-    const college = req.user.college;
-    const course = req.user.department;
+    const course = req.user.role === 'Admin' ? (req.body.course || req.body.department) : req.user.department;
+    const college = req.user.role === 'Admin' ? req.body.college : req.user.college;
+
+    if (!course) {
+      return res.status(400).json({ success: false, message: 'Course/Department parameter is required' });
+    }
+    if (req.user.role === 'Admin' && !college) {
+      return res.status(400).json({ success: false, message: 'College parameter is required for Admin' });
+    }
 
     // Create unique composite record
     const allocation = new SubjectAllocation({
@@ -186,9 +204,13 @@ exports.deleteAllocation = async (req, res) => {
 // Get Faculty list for dropdown (filtered by HOD's college)
 exports.getFacultyList = async (req, res) => {
   try {
-    const college = req.user.college;
+    const college = req.user.role === 'Admin' ? req.query.college : req.user.college;
     // Find all active Faculty users in the same college
-    const facultyList = await User.find({ role: 'Faculty', college, status: 'active' }).sort({ fullName: 1 });
+    const query = { role: 'Faculty', status: 'active' };
+    if (college) {
+      query.college = college;
+    }
+    const facultyList = await User.find(query).sort({ fullName: 1 });
     return res.status(200).json({ success: true, data: facultyList });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -219,15 +241,19 @@ exports.getBatchLanguageSubjects = async (req, res) => {
 exports.updateSubject = async (req, res) => {
   try {
     const { id } = req.params;
-    const { subjectId, name, subjectType } = req.body;
+    const { subjectId, name, subjectType, specialization } = req.body;
 
     if (!subjectId || !name) {
       return res.status(400).json({ success: false, message: 'Subject ID and Name are required' });
     }
 
     const cleanType = subjectType ? subjectType.toLowerCase().trim() : 'regular';
-    if (!['regular', 'language'].includes(cleanType)) {
-      return res.status(400).json({ success: false, message: 'Subject type must be either regular or language' });
+    if (!['regular', 'language', 'specialization'].includes(cleanType)) {
+      return res.status(400).json({ success: false, message: 'Subject type must be regular, language, or specialization' });
+    }
+
+    if (cleanType === 'specialization' && (!specialization || !specialization.trim())) {
+      return res.status(400).json({ success: false, message: 'Specialization name is required for specialization subjects' });
     }
 
     const subject = await Subject.findById(id);
@@ -238,6 +264,7 @@ exports.updateSubject = async (req, res) => {
     subject.subjectId = subjectId.toUpperCase();
     subject.name = name;
     subject.subjectType = cleanType;
+    subject.specialization = cleanType === 'specialization' ? specialization.trim() : undefined;
 
     await subject.save();
     return res.status(200).json({ success: true, data: subject });

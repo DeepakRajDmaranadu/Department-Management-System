@@ -240,8 +240,16 @@ const createUser = async (req, res, next) => {
           message: `Course '${targetDept}' already has an active HOD. Only one is allowed per course.`,
         });
       }
+    } else if (role === 'Office Assistant') {
+      const { assignedColleges, assignedDepartments } = req.body;
+      if (Array.isArray(assignedColleges) && assignedColleges.length > 0) {
+        targetCol = assignedColleges.join(', ');
+      }
+      if (Array.isArray(assignedDepartments) && assignedDepartments.length > 0) {
+        targetDept = assignedDepartments.join(', ');
+      }
     } else {
-      // Principal, Office Assistant, Faculty are registered under College
+      // Principal & Faculty are registered under a single College
       if (!college) {
         return res.status(400).json({
           success: false,
@@ -280,21 +288,6 @@ const createUser = async (req, res, next) => {
           });
         }
       }
-
-      // Enforce 1 active Office Assistant per College
-      if (role === 'Office Assistant') {
-        const existingAssistant = await User.findOne({
-          role: 'Office Assistant',
-          college: targetCol,
-          status: 'active',
-        });
-        if (existingAssistant) {
-          return res.status(400).json({
-            success: false,
-            message: `College '${targetCol}' already has an active Office Assistant. Only one Office Assistant is allowed per college.`,
-          });
-        }
-      }
     }
 
     // Check if user already exists (employeeId or email)
@@ -325,6 +318,8 @@ const createUser = async (req, res, next) => {
       password: hashedPassword,
       college: targetCol,
       department: targetDept,
+      assignedColleges: Array.isArray(req.body.assignedColleges) ? req.body.assignedColleges : (targetCol ? [targetCol] : []),
+      assignedDepartments: Array.isArray(req.body.assignedDepartments) ? req.body.assignedDepartments : (targetDept ? [targetDept] : []),
       role,
       status: status || 'active',
     });
@@ -341,6 +336,8 @@ const createUser = async (req, res, next) => {
         email: newUser.email,
         college: newUser.college,
         department: newUser.department,
+        assignedColleges: newUser.assignedColleges,
+        assignedDepartments: newUser.assignedDepartments,
         role: newUser.role,
         status: newUser.status,
         createdAt: newUser.createdAt,
@@ -485,8 +482,21 @@ const updateUser = async (req, res, next) => {
           });
         }
       }
+    } else if (targetRole === 'Office Assistant') {
+      if (Array.isArray(req.body.assignedColleges)) {
+        user.assignedColleges = req.body.assignedColleges;
+        targetCol = req.body.assignedColleges.join(', ');
+      } else {
+        targetCol = user.college || '';
+      }
+      if (Array.isArray(req.body.assignedDepartments)) {
+        user.assignedDepartments = req.body.assignedDepartments;
+        targetDept = req.body.assignedDepartments.join(', ');
+      } else {
+        targetDept = user.department || '';
+      }
     } else {
-      // Principal, Office Assistant, Faculty registered under College
+      // Principal & Faculty registered under single College
       const colToCheck = college !== undefined ? college : user.college;
       if (!colToCheck) {
         return res.status(400).json({
@@ -527,30 +537,14 @@ const updateUser = async (req, res, next) => {
           });
         }
       }
-
-      // Enforce 1 active Office Assistant per College
-      if (targetRole === 'Office Assistant' && targetStatus === 'active') {
-        const existingAssistant = await User.findOne({
-          role: 'Office Assistant',
-          college: targetCol,
-          status: 'active',
-          _id: { $ne: user._id }
-        });
-        if (existingAssistant) {
-          return res.status(400).json({
-            success: false,
-            message: `College '${targetCol}' already has an active Office Assistant.`,
-          });
-        }
-      }
     }
 
     // Apply updates
     if (fullName) user.fullName = fullName;
     if (email) user.email = email;
     user.role = targetRole;
-    user.college = targetCol;
-    user.department = targetDept;
+    if (targetCol !== undefined) user.college = targetCol;
+    if (targetDept !== undefined) user.department = targetDept;
     user.status = targetStatus;
 
     await user.save();
@@ -563,8 +557,10 @@ const updateUser = async (req, res, next) => {
         fullName: user.fullName,
         employeeId: user.employeeId,
         email: user.email,
-        college: user.college,
-        department: user.department,
+        college: user.college || '',
+        department: user.department || '',
+        assignedColleges: user.assignedColleges || [],
+        assignedDepartments: user.assignedDepartments || [],
         role: user.role,
         status: user.status,
       },

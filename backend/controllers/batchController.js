@@ -20,11 +20,14 @@ exports.createBatch = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Batch ID already exists' });
     }
 
-    const course = req.user.department;
-    const college = req.user.college;
+    const course = req.user.role === 'Admin' ? (req.body.course || req.body.department) : req.user.department;
+    const college = req.user.role === 'Admin' ? req.body.college : req.user.college;
 
     if (!course) {
-      return res.status(400).json({ success: false, message: 'Your HOD account is not mapped to any Course' });
+      return res.status(400).json({ success: false, message: 'Course/Department parameter is required' });
+    }
+    if (req.user.role === 'Admin' && !college) {
+      return res.status(400).json({ success: false, message: 'College parameter is required for Admin' });
     }
 
     const batch = new Batch({
@@ -44,11 +47,17 @@ exports.createBatch = async (req, res) => {
 // Get all batches for HOD's department
 exports.getBatches = async (req, res) => {
   try {
-    const course = req.user.department;
+    const isMultiScope = ['Admin', 'Principal', 'Office Assistant'].includes(req.user.role);
+    const course = isMultiScope ? (req.query.course || req.query.department) : req.user.department;
+    const college = (req.user.role === 'Admin' || req.user.role === 'Office Assistant') ? req.query.college : req.user.college;
     if (!course) {
       return res.status(200).json({ success: true, data: [] });
     }
-    const batches = await Batch.find({ course }).sort({ createdAt: -1 });
+    const filter = { course };
+    if (college) {
+      filter.college = college;
+    }
+    const batches = await Batch.find(filter).sort({ createdAt: -1 });
     return res.status(200).json({ success: true, data: batches });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -99,7 +108,7 @@ exports.deleteBatch = async (req, res) => {
 exports.addStudent = async (req, res) => {
   try {
     const { batchId } = req.params;
-    const { admissionNumber, studentId, fullName, email, language } = req.body;
+    const { admissionNumber, studentId, fullName, email, language, specialization } = req.body;
 
     if (!admissionNumber || !fullName || !email || !language) {
       return res.status(400).json({ success: false, message: 'Admission number, Name, Email, and Language are required' });
@@ -151,6 +160,7 @@ exports.addStudent = async (req, res) => {
       course: batch.course,
       college: batch.college,
       language: language.toUpperCase().trim(),
+      specialization: specialization && specialization.trim() ? specialization.trim() : undefined,
     });
 
     await student.save();
@@ -228,6 +238,7 @@ exports.addStudentsBulk = async (req, res) => {
       course: batch.course,
       college: batch.college,
       language: s.language.toUpperCase().trim(),
+      specialization: s.specialization && s.specialization.trim() ? s.specialization.trim() : undefined,
     }));
 
     await Student.insertMany(studentsToInsert);
@@ -389,7 +400,7 @@ exports.getAllotments = async (req, res) => {
 exports.updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
-    const { admissionNumber, studentId, fullName, email, language } = req.body;
+    const { admissionNumber, studentId, fullName, email, language, specialization } = req.body;
 
     if (!admissionNumber || !fullName || !email || !language) {
       return res.status(400).json({ success: false, message: 'Admission number, Name, Email, and Language are required' });
@@ -437,6 +448,7 @@ exports.updateStudent = async (req, res) => {
     student.fullName = fullName;
     student.email = email;
     student.language = language.toUpperCase().trim();
+    student.specialization = specialization && specialization.trim() ? specialization.trim() : undefined;
 
     await student.save();
 
@@ -541,6 +553,25 @@ exports.getDeleteImpact = async (req, res) => {
         'Faculty Subject Allocations': allocationCount,
         'Daily Attendance Logs': attendanceCount,
       };
+    } else if (type === 'semester') {
+      const Subject = require('../models/Subject');
+      const subjectCount = await Subject.countDocuments({ semester: id });
+      const sectionCount = await Section.countDocuments({ semester: id });
+      const allocationCount = await SubjectAllocation.countDocuments({ semester: id });
+      const attendanceCount = await Attendance.countDocuments({ semester: id });
+      const assignmentCount = await Assignment.countDocuments({ semester: id });
+      const iaCount = await InternalAssessment.countDocuments({ semester: id });
+      const allotmentCount = await Allotment.countDocuments({ semester: id });
+
+      impact = {
+        'Academic Subjects': subjectCount,
+        'Class Sections': sectionCount,
+        'Faculty Subject Allocations': allocationCount,
+        'Daily Attendance Logs': attendanceCount,
+        'Course Assignments': assignmentCount,
+        'Internal Assessment Sessions': iaCount,
+        'Student Section Allotments': allotmentCount,
+      };
     }
 
     return res.status(200).json({ success: true, impact });
@@ -575,3 +606,150 @@ exports.deleteSection = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Delete a semester
+exports.deleteSemester = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const Semester = require('../models/Semester');
+    const Section = require('../models/Section');
+    const SubjectAllocation = require('../models/SubjectAllocation');
+    const Subject = require('../models/Subject');
+    const Allotment = require('../models/Allotment');
+    const Attendance = require('../models/Attendance');
+    const Assignment = require('../models/Assignment');
+    const InternalAssessment = require('../models/InternalAssessment');
+    const InternalAssessmentMark = require('../models/InternalAssessmentMark');
+
+    const semester = await Semester.findById(id);
+    if (!semester) {
+      return res.status(404).json({ success: false, message: 'Semester not found' });
+    }
+
+    // Delete all allotments under this semester
+    await Allotment.deleteMany({ semester: id });
+
+    // Delete all subject allocations under this semester
+    await SubjectAllocation.deleteMany({ semester: id });
+
+    // Delete all attendance logs under this semester
+    await Attendance.deleteMany({ semester: id });
+
+    // Delete all assignments under this semester
+    await Assignment.deleteMany({ semester: id });
+
+    // Delete all internal assessment marks under this semester
+    const assessments = await InternalAssessment.find({ semester: id });
+    const assessmentIds = assessments.map(a => a._id);
+    await InternalAssessmentMark.deleteMany({ internalAssessment: { $in: assessmentIds } });
+    await InternalAssessment.deleteMany({ semester: id });
+
+    // Delete all subjects under this semester
+    await Subject.deleteMany({ semester: id });
+
+    // Delete all sections under this semester
+    await Section.deleteMany({ semester: id });
+
+    // Delete the semester itself
+    await Semester.findByIdAndDelete(id);
+
+    return res.status(200).json({ success: true, message: 'Semester and all associated subjects, sections, and allotments deleted successfully.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Update a semester
+exports.updateSemester = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Semester name is required' });
+    }
+
+    const Semester = require('../models/Semester');
+    const semester = await Semester.findById(id);
+    if (!semester) {
+      return res.status(404).json({ success: false, message: 'Semester not found' });
+    }
+
+    // Check if another semester in the same batch has the same name
+    const duplicate = await Semester.findOne({
+      batch: semester.batch,
+      name: name.trim(),
+      _id: { $ne: id }
+    });
+    if (duplicate) {
+      return res.status(400).json({ success: false, message: 'Semester name already exists for this batch.' });
+    }
+
+    semester.name = name.trim();
+    await semester.save();
+
+    return res.status(200).json({ success: true, data: semester, message: 'Semester updated successfully.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Update a section
+exports.updateSection = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Section name is required' });
+    }
+
+    const Section = require('../models/Section');
+    const section = await Section.findById(id);
+    if (!section) {
+      return res.status(404).json({ success: false, message: 'Section not found' });
+    }
+
+    // Check duplicate in same semester
+    const duplicate = await Section.findOne({
+      semester: section.semester,
+      name: name.trim().toUpperCase(),
+      _id: { $ne: id }
+    });
+    if (duplicate) {
+      return res.status(400).json({ success: false, message: 'Section name already exists for this semester.' });
+    }
+
+    section.name = name.trim().toUpperCase();
+    await section.save();
+
+    return res.status(200).json({ success: true, data: section, message: 'Section updated successfully.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Get all unique specializations defined in a batch's subjects
+exports.getBatchSpecializations = async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const Semester = require('../models/Semester');
+    const Subject = require('../models/Subject');
+    
+    // Find all semesters under the batch
+    const semesters = await Semester.find({ batch: batchId });
+    const semesterIds = semesters.map(s => s._id);
+    
+    // Find all specialization subjects in these semesters
+    const subjects = await Subject.find({
+      semester: { $in: semesterIds },
+      subjectType: 'specialization',
+    });
+    
+    // Extract unique specialization names
+    const specializations = Array.from(new Set(subjects.map(s => s.specialization).filter(Boolean)));
+    
+    return res.status(200).json({ success: true, data: specializations });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+

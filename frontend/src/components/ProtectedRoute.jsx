@@ -20,7 +20,7 @@ export const getRoleRedirectPath = (role) => {
 };
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, adminActiveCollege, adminActiveCourse } = useAuth();
 
   if (loading) {
     return (
@@ -37,7 +37,8 @@ export const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  const isMultiScoped = (user.role === "Principal" || user.role === "Office Assistant") && adminActiveCollege && adminActiveCourse;
+  if (allowedRoles && !allowedRoles.includes(user.role) && user.role !== "Admin" && !isMultiScoped) {
     const redirectPath = getRoleRedirectPath(user.role);
     return <Navigate to={redirectPath} replace />;
   }

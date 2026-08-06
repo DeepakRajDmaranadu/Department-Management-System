@@ -16,13 +16,13 @@ const { authenticateUser, authorizeRoles } = require('../middleware/authMiddlewa
 router.use(authenticateUser);
 
 // HOD Consolidated Report Route
-router.get('/hod/consolidated', authorizeRoles('HOD'), getConsolidatedAttendanceForHOD);
-router.get('/hod/daily-attendance', authorizeRoles('HOD'), getHODDailyAttendance);
-router.post('/hod/daily-attendance', authorizeRoles('HOD'), submitHODDailyAttendance);
+router.get('/hod/consolidated', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), getConsolidatedAttendanceForHOD);
+router.get('/hod/daily-attendance', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), getHODDailyAttendance);
+router.post('/hod/daily-attendance', authorizeRoles('HOD', 'Admin'), submitHODDailyAttendance);
 
 // Faculty & HOD general routes
-router.get('/consolidated', authorizeRoles('Faculty', 'HOD'), getConsolidatedAttendance);
-router.get('/history', authorizeRoles('Faculty', 'HOD'), getAttendanceHistory);
+router.get('/consolidated', authorizeRoles('Faculty', 'HOD', 'Admin', 'Principal', 'Office Assistant'), getConsolidatedAttendance);
+router.get('/history', authorizeRoles('Faculty', 'HOD', 'Admin', 'Principal', 'Office Assistant'), getAttendanceHistory);
 
 // Faculty exclusive routes
 router.get('/my-allocations', authorizeRoles('Faculty'), getMyAllocations);

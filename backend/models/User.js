@@ -39,6 +39,18 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    assignedColleges: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    assignedDepartments: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
     role: {
       type: String,
       required: [true, 'Role is required'],

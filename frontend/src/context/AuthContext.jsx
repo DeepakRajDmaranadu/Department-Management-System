@@ -8,6 +8,27 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const [adminActiveCollege, setAdminActiveCollegeState] = useState(() => localStorage.getItem("adminActiveCollege") || "");
+  const [adminActiveCourse, setAdminActiveCourseState] = useState(() => localStorage.getItem("adminActiveCourse") || "");
+
+  const setAdminActiveCollege = (college) => {
+    setAdminActiveCollegeState(college);
+    if (college) {
+      localStorage.setItem("adminActiveCollege", college);
+    } else {
+      localStorage.removeItem("adminActiveCollege");
+    }
+  };
+
+  const setAdminActiveCourse = (course) => {
+    setAdminActiveCourseState(course);
+    if (course) {
+      localStorage.setItem("adminActiveCourse", course);
+    } else {
+      localStorage.removeItem("adminActiveCourse");
+    }
+  };
+
   useEffect(() => {
     const initializeAuth = async () => {
       const storedToken = localStorage.getItem("token");
@@ -40,6 +61,22 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
   }, []);
 
+  useEffect(() => {
+    if (user && user.role === "Principal") {
+      setAdminActiveCollege(user.college || "");
+    }
+    if (user && user.role === "Office Assistant") {
+      const assignedCols = user.assignedColleges || (user.college ? user.college.split(", ") : []);
+      if (assignedCols.length > 0 && (!adminActiveCollege || !assignedCols.includes(adminActiveCollege))) {
+        setAdminActiveCollege(assignedCols[0]);
+      }
+      const assignedDepts = user.assignedDepartments || (user.department ? user.department.split(", ") : []);
+      if (assignedDepts.length > 0 && (!adminActiveCourse || !assignedDepts.includes(adminActiveCourse))) {
+        setAdminActiveCourse(assignedDepts[0]);
+      }
+    }
+  }, [user]);
+
   const login = async (employeeId, password, rememberMe) => {
     try {
       const response = await api.post("/api/auth/login", { employeeId, password });
@@ -70,8 +107,12 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setUser(null);
       setToken(null);
+      setAdminActiveCollegeState("");
+      setAdminActiveCourseState("");
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      localStorage.removeItem("adminActiveCollege");
+      localStorage.removeItem("adminActiveCourse");
     }
   };
 
@@ -86,7 +127,20 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, updateUser }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        loading,
+        login,
+        logout,
+        updateUser,
+        adminActiveCollege,
+        adminActiveCourse,
+        setAdminActiveCollege,
+        setAdminActiveCourse,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

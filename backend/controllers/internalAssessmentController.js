@@ -20,7 +20,7 @@ exports.createAssessment = async (req, res) => {
       maxMarks,
       batch,
       semester,
-      college: req.user.college || 'Default College',
+      college: req.user.role === 'Admin' ? (req.body.college || 'Default College') : (req.user.college || 'Default College'),
     });
 
     res.status(201).json({ success: true, data: assessment });
@@ -131,7 +131,7 @@ exports.getFacultyMarksheet = async (req, res) => {
     }
     const studentsRaw = await Student.find(studentQuery).sort({ studentId: 1 });
 
-    // Filter students if it's a language subject
+    // Filter students if it's a language subject or specialization subject
     let students = [...studentsRaw];
     if (subject.subjectType === 'language') {
       const langCode = subject.subjectId.toUpperCase().trim();
@@ -144,6 +144,11 @@ exports.getFacultyMarksheet = async (req, res) => {
           studentLang.startsWith(langCode) ||
           (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
         );
+      });
+    } else if (subject.subjectType === 'specialization') {
+      const specName = (subject.specialization || "").toLowerCase().trim();
+      students = students.filter(student => {
+        return (student.specialization || "").toLowerCase().trim() === specName;
       });
     }
 
@@ -333,6 +338,10 @@ exports.getHODConsolidatedReport = async (req, res) => {
             studentLang.startsWith(langCode) ||
             (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
           );
+        } else if (sub.subjectType === 'specialization') {
+          const specName = (sub.specialization || "").toLowerCase().trim();
+          const studentSpec = (student.specialization || "").toLowerCase().trim();
+          isEnrolled = studentSpec === specName;
         }
 
         if (!isEnrolled) {

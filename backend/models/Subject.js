@@ -31,13 +31,17 @@ const subjectSchema = new mongoose.Schema(
     subjectType: {
       type: String,
       enum: {
-        values: ['regular', 'language'],
-        message: 'Subject type must be either: regular or language',
+        values: ['regular', 'language', 'specialization'],
+        message: 'Subject type must be either: regular, language, or specialization',
       },
       default: 'regular',
       required: true,
       trim: true,
       lowercase: true,
+    },
+    specialization: {
+      type: String,
+      trim: true,
     },
   },
   {

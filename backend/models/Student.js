@@ -45,6 +45,10 @@ const studentSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
     },
+    specialization: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,

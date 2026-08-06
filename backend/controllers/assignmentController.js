@@ -54,6 +54,14 @@ exports.createAssignment = async (req, res) => {
       });
     }
 
+    // Apply specialization filtering for specialization subjects
+    if (subject.subjectType === 'specialization') {
+      const specName = (subject.specialization || "").toLowerCase().trim();
+      students = students.filter(student => {
+        return (student.specialization || "").toLowerCase().trim() === specName;
+      });
+    }
+
     // Map initial submissions status as pending for all roster students
     const submissions = students.map(student => ({
       student: student._id,
@@ -272,7 +280,7 @@ exports.getConsolidatedAssignmentsForHOD = async (req, res) => {
         facultyName
       };
 
-      // Filter students if this is a language subject
+      // Filter students if this is a language subject or specialization subject
       let filteredStudents = [...students];
       if (subject.subjectType === 'language') {
         const langCode = subject.subjectId.toUpperCase().trim();
@@ -285,6 +293,11 @@ exports.getConsolidatedAssignmentsForHOD = async (req, res) => {
             studentLang.startsWith(langCode) ||
             (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
           );
+        });
+      } else if (subject.subjectType === 'specialization') {
+        const specName = (subject.specialization || "").toLowerCase().trim();
+        filteredStudents = filteredStudents.filter(student => {
+          return (student.specialization || "").toLowerCase().trim() === specName;
         });
       }
 
@@ -356,6 +369,10 @@ exports.getConsolidatedAssignmentsForHOD = async (req, res) => {
             studentLang.startsWith(langCode) ||
             (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
           );
+        } else if (sub.subjectType === 'specialization') {
+          const specName = (sub.specialization || "").toLowerCase().trim();
+          const studentSpec = (student.specialization || "").toLowerCase().trim();
+          isEnrolled = studentSpec === specName;
         }
 
         if (!isEnrolled) {

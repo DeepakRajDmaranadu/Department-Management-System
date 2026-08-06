@@ -40,6 +40,14 @@ exports.getDynamicSheetData = async (req, res) => {
       });
     }
 
+    // Apply specialization subject roster filtering
+    if (subject.subjectType === 'specialization') {
+      const specName = (subject.specialization || "").toLowerCase().trim();
+      students = students.filter(student => {
+        return (student.specialization || "").toLowerCase().trim() === specName;
+      });
+    }
+
     // 2. Fetch Attendance percentages for ALL subjects in the semester
     const allAttendanceRecords = await Attendance.find({
       semester: semesterId,
@@ -70,6 +78,11 @@ exports.getDynamicSheetData = async (req, res) => {
             studentLang.startsWith(langCode) ||
             (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
           );
+        });
+      } else if (sub.subjectType === 'specialization') {
+        const specName = (sub.specialization || "").toLowerCase().trim();
+        subStudents = subStudents.filter(student => {
+          return (student.specialization || "").toLowerCase().trim() === specName;
         });
       }
 
@@ -270,6 +283,11 @@ exports.exportAllDynamicSheets = async (req, res) => {
             (studentLang.length >= 3 && subCode.substring(0, 3) === studentLang.substring(0, 3))
           );
         });
+      } else if (sub.subjectType === 'specialization') {
+        const specName = (sub.specialization || "").toLowerCase().trim();
+        subStudents = subStudents.filter(student => {
+          return (student.specialization || "").toLowerCase().trim() === specName;
+        });
       }
 
       // Compute Attendance map
@@ -377,6 +395,10 @@ exports.exportAllDynamicSheets = async (req, res) => {
             studentLang.startsWith(langCode) ||
             (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
           );
+        } else if (sub.subjectType === 'specialization') {
+          const specName = (sub.specialization || "").toLowerCase().trim();
+          const studentSpec = (student.specialization || "").toLowerCase().trim();
+          isEnrolled = studentSpec === specName;
         }
 
         if (!isEnrolled) return;
