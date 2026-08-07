@@ -1,0 +1,18 @@
+{
+  "name": "department-management-system",
+  "version": "1.0.0",
+  "description": "Department Management System with Attendance, Marks, and Assignments",
+  "main": "backend/server.js",
+  "scripts": {
+    "install-backend": "npm install --prefix backend",
+    "install-frontend": "npm install --prefix frontend",
+    "install-all": "npm run install-backend && npm run install-frontend",
+    "build-frontend": "npm run build --prefix frontend",
+    "build": "npm run install-all && npm run build-frontend",
+    "start": "node backend/server.js",
+    "dev": "npm run dev --prefix backend"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

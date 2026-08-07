@@ -71,6 +71,19 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Department DMS API is running' });
 });
 
+// Serve static assets in production
+if (process.env.NODE_ENV === 'production') {
+  const path = require('path');
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+  
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  });
+}
+
 // 404 Route Not Found Handler
 app.use((req, res, next) => {
   res.status(404).json({ success: false, message: 'Resource not found' });
