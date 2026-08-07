@@ -34,19 +34,22 @@ export const AuthProvider = ({ children }) => {
       const storedToken = localStorage.getItem("token");
       const storedUser = localStorage.getItem("user");
 
-      if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+      if (!storedToken || !storedUser) {
+        setToken(null);
+        setUser(null);
+        setLoading(false);
+        return;
       }
+
+      setToken(storedToken);
+      setUser(JSON.parse(storedUser));
 
       try {
         const response = await api.get("/api/auth/profile");
         if (response.data.success && response.data.user) {
           const freshUser = response.data.user;
           setUser(freshUser);
-          if (storedToken) {
-            localStorage.setItem("user", JSON.stringify(freshUser));
-          }
+          localStorage.setItem("user", JSON.stringify(freshUser));
         }
       } catch (error) {
         localStorage.removeItem("token");
