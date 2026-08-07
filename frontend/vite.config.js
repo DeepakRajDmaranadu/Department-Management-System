@@ -15,7 +15,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'https://rrcollegeapi.votioncloud.org',
         changeOrigin: true,
         secure: false,
       },
