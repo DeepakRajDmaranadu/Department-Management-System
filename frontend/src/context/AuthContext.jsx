@@ -31,8 +31,8 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const initializeAuth = async () => {
-      const storedToken = localStorage.getItem("token");
-      const storedUser = localStorage.getItem("user");
+      const storedToken = localStorage.getItem("token") || sessionStorage.getItem("token");
+      const storedUser = localStorage.getItem("user") || sessionStorage.getItem("user");
 
       if (!storedToken || !storedUser) {
         setToken(null);
@@ -49,11 +49,17 @@ export const AuthProvider = ({ children }) => {
         if (response.data.success && response.data.user) {
           const freshUser = response.data.user;
           setUser(freshUser);
-          localStorage.setItem("user", JSON.stringify(freshUser));
+          if (localStorage.getItem("token")) {
+            localStorage.setItem("user", JSON.stringify(freshUser));
+          } else {
+            sessionStorage.setItem("user", JSON.stringify(freshUser));
+          }
         }
       } catch (error) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("user");
         setToken(null);
         setUser(null);
       } finally {
@@ -91,7 +97,11 @@ export const AuthProvider = ({ children }) => {
       if (rememberMe) {
         localStorage.setItem("token", receivedToken);
         localStorage.setItem("user", JSON.stringify(loggedUser));
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("user");
       } else {
+        sessionStorage.setItem("token", receivedToken);
+        sessionStorage.setItem("user", JSON.stringify(loggedUser));
         localStorage.removeItem("token");
         localStorage.removeItem("user");
       }
@@ -116,6 +126,8 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem("user");
       localStorage.removeItem("adminActiveCollege");
       localStorage.removeItem("adminActiveCourse");
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
     }
   };
 
@@ -125,6 +137,8 @@ export const AuthProvider = ({ children }) => {
       setUser(newUser);
       if (localStorage.getItem("user")) {
         localStorage.setItem("user", JSON.stringify(newUser));
+      } else {
+        sessionStorage.setItem("user", JSON.stringify(newUser));
       }
     }
   };
