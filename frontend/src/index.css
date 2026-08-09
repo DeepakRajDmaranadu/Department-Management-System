@@ -37,6 +37,39 @@
 }
 
 @layer base {
+  html {
+    font-size: 13.5px;
+  }
+  @media (min-width: 375px) {
+    html {
+      font-size: 14px;
+    }
+  }
+  @media (min-width: 640px) {
+    html {
+      font-size: 14.5px;
+    }
+  }
+  @media (min-width: 768px) {
+    html {
+      font-size: 15px;
+    }
+  }
+  @media (min-width: 1024px) {
+    html {
+      font-size: 15.5px;
+    }
+  }
+  @media (min-width: 1280px) {
+    html {
+      font-size: 16px;
+    }
+  }
+  @media (min-width: 1536px) {
+    html {
+      font-size: 16.5px;
+    }
+  }
   * {
     @apply border-border;
   }
