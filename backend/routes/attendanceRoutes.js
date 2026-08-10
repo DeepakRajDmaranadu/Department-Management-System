@@ -9,6 +9,7 @@ const {
   getConsolidatedAttendanceForHOD,
   getHODDailyAttendance,
   submitHODDailyAttendance,
+  getDailyAbsentees,
 } = require('../controllers/attendanceController');
 const { authenticateUser, authorizeRoles } = require('../middleware/authMiddleware');
 
@@ -19,6 +20,7 @@ router.use(authenticateUser);
 router.get('/hod/consolidated', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), getConsolidatedAttendanceForHOD);
 router.get('/hod/daily-attendance', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), getHODDailyAttendance);
 router.post('/hod/daily-attendance', authorizeRoles('HOD', 'Admin'), submitHODDailyAttendance);
+router.get('/hod/daily-absentees/:batchId', authorizeRoles('HOD', 'Admin', 'Principal', 'Office Assistant'), getDailyAbsentees);
 
 // Faculty & HOD general routes
 router.get('/consolidated', authorizeRoles('Faculty', 'HOD', 'Admin', 'Principal', 'Office Assistant'), getConsolidatedAttendance);

@@ -474,6 +474,20 @@ export const DashboardHome = () => {
   const [hodConsolidatedStartDate, setHodConsolidatedStartDate] = useState("");
   const [hodConsolidatedEndDate, setHodConsolidatedEndDate] = useState("");
   const [hodSearchQuery, setHodSearchQuery] = useState("");
+  const [consolidatedViewMode, setConsolidatedViewMode] = useState("ledger");
+  
+  // HOD Daily Absentees states
+  const [hodDailyAbsenteesDate, setHodDailyAbsenteesDate] = useState(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [hodDailyAbsenteesList, setHodDailyAbsenteesList] = useState([]);
+  const [hodDailyAbsenteesSubjects, setHodDailyAbsenteesSubjects] = useState([]);
+  const [hodDailyAbsenteesLoading, setHodDailyAbsenteesLoading] = useState(false);
+  const [hodDailyAbsenteesSearchQuery, setHodDailyAbsenteesSearchQuery] = useState("");
   const [hodSortCriteria, setHodSortCriteria] = useState("rollAsc");
   const [hodSemesters, setHodSemesters] = useState([]);
   const [hodSections, setHodSections] = useState([]);
@@ -2158,6 +2172,28 @@ export const DashboardHome = () => {
     }
   };
 
+  const fetchHODDailyAbsentees = async () => {
+    if (!hodSelectedBatch || !hodSelectedSemester || !hodDailyAbsenteesDate) return;
+    setHodDailyAbsenteesLoading(true);
+    try {
+      const response = await api.get(`/api/attendance/hod/daily-absentees/${hodSelectedBatch._id}`, {
+        params: {
+          semesterId: hodSelectedSemester._id,
+          sectionId: hodSelectedSection === "all" ? "" : hodSelectedSection,
+          date: hodDailyAbsenteesDate
+        }
+      });
+      if (response.data.success) {
+        setHodDailyAbsenteesList(response.data.absentees);
+        setHodDailyAbsenteesSubjects(response.data.activeSubjects);
+      }
+    } catch (err) {
+      console.error("Failed to fetch HOD daily absentees", err);
+    } finally {
+      setHodDailyAbsenteesLoading(false);
+    }
+  };
+
   const fetchHODDailyAttendance = async () => {
     if (!hodSelectedSemester || !hodDailySelectedSubjectId || !hodDailySelectedDate) return;
     setHodDailyLoading(true);
@@ -2535,6 +2571,97 @@ export const DashboardHome = () => {
     document.body.removeChild(link);
   };
 
+  const getFilteredDailyAbsenteesList = () => {
+    let list = [...hodDailyAbsenteesList];
+    if (hodDailyAbsenteesSearchQuery.trim()) {
+      const q = hodDailyAbsenteesSearchQuery.toLowerCase();
+      list = list.filter(item =>
+        item.fullName.toLowerCase().includes(q) ||
+        (item.studentId && item.studentId.toLowerCase().includes(q)) ||
+        (item.admissionNumber && item.admissionNumber.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  };
+
+  const downloadHODDailyAbsenteesExcel = () => {
+    if (hodDailyAbsenteesList.length === 0) return;
+
+    let html = `<html xmlns:o="urn:schemas-microsoft-excel:office:office" xmlns:x="urn:schemas-microsoft-excel:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; }
+  table { border-collapse: collapse; width: 100%; font-family: 'Segoe UI', Arial, sans-serif; }
+  th, td { border: 1px solid #000000; padding: 10px 14px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; text-align: left; }
+  th { background-color: #f3f4f6; font-weight: bold; }
+  .title { font-size: 18px; font-weight: bold; margin-bottom: 10px; font-family: 'Segoe UI', Arial, sans-serif; }
+  .center { text-align: center; }
+</style>
+</head>
+<body>
+  <div class="title">DAILY ABSENTEES REPORT</div>
+  <div><b>Date:</b> ${hodDailyAbsenteesDate}</div>
+  <div><b>Batch:</b> ${hodSelectedBatch?.batchId} (${hodSelectedBatch?.years})</div>
+  <div><b>Semester:</b> ${hodSelectedSemester?.name}</div>
+  <div><b>Section:</b> ${hodSelectedSection === 'all' || !hodSelectedSection ? 'All Sections' : (hodSections.find(s => s._id === hodSelectedSection)?.name || 'N/A')}</div>
+  <br/>
+  <table>
+    <thead>
+      <tr>
+        <th class="center">Sl. No.</th>
+        <th>Admission Number</th>
+        <th>Register Number</th>
+        <th>Student Name</th>
+        <th>Email</th>
+        <th>Language Choice</th>
+        <th>Specialization</th>`;
+
+    hodDailyAbsenteesSubjects.forEach(sub => {
+      html += `<th class="center">${sub.subjectId}</th>`;
+    });
+
+    html += `
+      </tr>
+    </thead>
+    <tbody>`;
+
+    getFilteredDailyAbsenteesList().forEach((row, idx) => {
+      html += `
+      <tr>
+        <td class="center">${idx + 1}</td>
+        <td>${row.admissionNumber}</td>
+        <td>${row.studentId || '—'}</td>
+        <td>${row.fullName}</td>
+        <td>${row.email}</td>
+        <td class="center" style="text-transform: uppercase;">${row.language || 'N/A'}</td>
+        <td>${row.specialization || 'General'}</td>`;
+
+      hodDailyAbsenteesSubjects.forEach(sub => {
+        const val = row.subjectStatus[sub._id];
+        const displayVal = val === undefined ? 'N/A' : (val === 0 ? 'Absent (0)' : 'Present (1)');
+        html += `<td class="center">${displayVal}</td>`;
+      });
+
+      html += `
+      </tr>`;
+    });
+
+    html += `
+    </tbody>
+  </table>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `daily_absentees_${hodDailyAbsenteesDate}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const getFilteredAndSortedHODData = () => {
     if (!hodConsolidatedData || !hodConsolidatedData.data) return [];
     let list = [...hodConsolidatedData.data];
@@ -2628,6 +2755,12 @@ export const DashboardHome = () => {
       );
     }
   }, [hodSelectedSemester, hodSelectedSection, hodConsolidatedStartDate, hodConsolidatedEndDate]);
+
+  useEffect(() => {
+    if (hodSelectedSemester && hodSelectedBatch && hodDailyAbsenteesDate) {
+      fetchHODDailyAbsentees();
+    }
+  }, [hodSelectedSemester, hodSelectedSection, hodDailyAbsenteesDate, hodSelectedBatch]);
 
   const fetchHODConsolidatedAssignments = async (semId, secId) => {
     if (!semId) return;
@@ -4876,30 +5009,70 @@ export const DashboardHome = () => {
                     Select a class, section, and subjects to inspect attendance statistics.
                   </CardDescription>
                 </div>
-                {hasRecords && (
-                  <div className="flex items-center space-x-2">
-                    <Button
+                <div className="flex items-center space-x-4">
+                  <div className="flex bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                    <button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={copyHODConsolidatedAttendanceToClipboard}
-                      className="text-xs h-8 px-3 border-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300 flex items-center space-x-1 font-semibold"
+                      onClick={() => setConsolidatedViewMode("ledger")}
+                      className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${
+                        consolidatedViewMode === "ledger"
+                          ? "bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white shadow-sm"
+                          : "text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
+                      }`}
                     >
-                      <Copy className="h-4 w-4" />
-                      <span>Copy Table Data</span>
-                    </Button>
+                      Consolidated Ledger
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConsolidatedViewMode("absentees")}
+                      className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${
+                        consolidatedViewMode === "absentees"
+                          ? "bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white shadow-sm"
+                          : "text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
+                      }`}
+                    >
+                      Daily Absentees
+                    </button>
+                  </div>
+
+                  {consolidatedViewMode === "ledger" && hasRecords && (
+                    <div className="flex items-center space-x-2 animate-in fade-in duration-200">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={copyHODConsolidatedAttendanceToClipboard}
+                        className="text-xs h-8 px-3 border-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300 flex items-center space-x-1 font-semibold"
+                      >
+                        <Copy className="h-4 w-4" />
+                        <span>Copy Table Data</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={downloadHODConsolidatedExcel}
+                        className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold"
+                      >
+                        <FileSpreadsheet className="h-4 w-4" />
+                        <span>Export Excel Report</span>
+                      </Button>
+                    </div>
+                  )}
+
+                  {consolidatedViewMode === "absentees" && hodDailyAbsenteesList.length > 0 && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={downloadHODConsolidatedExcel}
-                      className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold"
+                      onClick={downloadHODDailyAbsenteesExcel}
+                      className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold animate-in fade-in duration-200"
                     >
                       <FileSpreadsheet className="h-4 w-4" />
-                      <span>Export Excel Report</span>
+                      <span>Export Absentees Report</span>
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="pt-4">
                 {/* Selectors Grid */}
@@ -4953,117 +5126,132 @@ export const DashboardHome = () => {
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-1 relative">
-                    <Label className="text-zinc-700 dark:text-zinc-300">Course Subjects</Label>
-                    <div className="relative">
-                      <button
-                        type="button"
+                  {consolidatedViewMode === "ledger" ? (
+                    <>
+                      <div className="space-y-1 relative">
+                        <Label className="text-zinc-700 dark:text-zinc-300">Course Subjects</Label>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            disabled={!hodSelectedSemester}
+                            onClick={() => setIsSubjectDropdownOpen(!isSubjectDropdownOpen)}
+                            className="flex h-8 w-full items-center justify-between rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-50 text-left"
+                          >
+                            <span className="truncate">
+                              {hodSelectedSubjectIds.length === 0
+                                ? "No subjects selected"
+                                : hodSelectedSubjectIds.length === (hodSubjects.filter(s => s.subjectType !== 'language').length + (hodSubjects.some(s => s.subjectType === 'language') ? 1 : 0))
+                                ? "All Subjects Selected"
+                                : `${hodSelectedSubjectIds.length} Subjects Selected`}
+                            </span>
+                            <ChevronDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
+                          </button>
+
+                          {isSubjectDropdownOpen && (
+                            <>
+                              <div 
+                                className="fixed inset-0 z-40" 
+                                onClick={() => setIsSubjectDropdownOpen(false)}
+                              />
+                              <div className="absolute right-0 left-0 mt-1 z-50 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 p-2 shadow-md max-h-60 overflow-y-auto space-y-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                                <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 dark:border-zinc-900 text-[10px] text-zinc-500">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const regularIds = hodSubjects.filter(s => s.subjectType !== 'language').map(s => s._id);
+                                      const hasLang = hodSubjects.some(s => s.subjectType === 'language');
+                                      setHodSelectedSubjectIds(hasLang ? [...regularIds, "language"] : regularIds);
+                                    }}
+                                    className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
+                                  >
+                                    Select All
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setHodSelectedSubjectIds([])}
+                                    className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
+                                  >
+                                    Deselect All
+                                  </button>
+                                </div>
+                                
+                                {/* Combined Language Option */}
+                                {hodSubjects.some(s => s.subjectType === 'language') && (
+                                  <label className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300 font-semibold">
+                                    <input
+                                      type="checkbox"
+                                      checked={hodSelectedSubjectIds.includes("language")}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setHodSelectedSubjectIds(prev => [...prev, "language"]);
+                                        } else {
+                                          setHodSelectedSubjectIds(prev => prev.filter(x => x !== "language"));
+                                        }
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                                    />
+                                    <span>Language</span>
+                                  </label>
+                                )}
+
+                                {/* Regular Subjects */}
+                                {hodSubjects.filter(s => s.subjectType !== 'language').map(sub => (
+                                  <label key={sub._id} className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300">
+                                    <input
+                                      type="checkbox"
+                                      checked={hodSelectedSubjectIds.includes(sub._id)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setHodSelectedSubjectIds(prev => [...prev, sub._id]);
+                                        } else {
+                                          setHodSelectedSubjectIds(prev => prev.filter(x => x !== sub._id));
+                                        }
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
+                                    />
+                                    <span>{sub.subjectId} - {sub.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-zinc-700 dark:text-zinc-300">From Date</Label>
+                        <Input
+                          type="date"
+                          disabled={!hodSelectedSemester}
+                          value={hodConsolidatedStartDate}
+                          onChange={(e) => setHodConsolidatedStartDate(e.target.value)}
+                          className="h-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-zinc-700 dark:text-zinc-300">To Date</Label>
+                        <Input
+                          type="date"
+                          disabled={!hodSelectedSemester}
+                          value={hodConsolidatedEndDate}
+                          onChange={(e) => setHodConsolidatedEndDate(e.target.value)}
+                          className="h-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-1">
+                      <Label className="text-zinc-700 dark:text-zinc-300">Choose Date *</Label>
+                      <Input
+                        type="date"
                         disabled={!hodSelectedSemester}
-                        onClick={() => setIsSubjectDropdownOpen(!isSubjectDropdownOpen)}
-                        className="flex h-8 w-full items-center justify-between rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-50 text-left"
-                      >
-                        <span className="truncate">
-                          {hodSelectedSubjectIds.length === 0
-                            ? "No subjects selected"
-                            : hodSelectedSubjectIds.length === (hodSubjects.filter(s => s.subjectType !== 'language').length + (hodSubjects.some(s => s.subjectType === 'language') ? 1 : 0))
-                            ? "All Subjects Selected"
-                            : `${hodSelectedSubjectIds.length} Subjects Selected`}
-                        </span>
-                        <ChevronDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
-                      </button>
-
-                      {isSubjectDropdownOpen && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setIsSubjectDropdownOpen(false)}
-                          />
-                          <div className="absolute right-0 left-0 mt-1 z-50 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 shadow-md max-h-60 overflow-y-auto space-y-1 animate-in fade-in slide-in-from-top-1 duration-100">
-                            <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 dark:border-zinc-900 text-[10px] text-zinc-500">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const regularIds = hodSubjects.filter(s => s.subjectType !== 'language').map(s => s._id);
-                                  const hasLang = hodSubjects.some(s => s.subjectType === 'language');
-                                  setHodSelectedSubjectIds(hasLang ? [...regularIds, "language"] : regularIds);
-                                }}
-                                className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
-                              >
-                                Select All
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setHodSelectedSubjectIds([])}
-                                className="hover:text-zinc-900 dark:hover:text-white underline font-semibold"
-                              >
-                                Deselect All
-                              </button>
-                            </div>
-                            
-                            {/* Combined Language Option */}
-                            {hodSubjects.some(s => s.subjectType === 'language') && (
-                              <label className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300 font-semibold">
-                                <input
-                                  type="checkbox"
-                                  checked={hodSelectedSubjectIds.includes("language")}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setHodSelectedSubjectIds(prev => [...prev, "language"]);
-                                    } else {
-                                      setHodSelectedSubjectIds(prev => prev.filter(x => x !== "language"));
-                                    }
-                                  }}
-                                  className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
-                                />
-                                <span>Language</span>
-                              </label>
-                            )}
-
-                            {/* Regular Subjects */}
-                            {hodSubjects.filter(s => s.subjectType !== 'language').map(sub => (
-                              <label key={sub._id} className="flex items-center space-x-2 p-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer select-none text-zinc-700 dark:text-zinc-300">
-                                <input
-                                  type="checkbox"
-                                  checked={hodSelectedSubjectIds.includes(sub._id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setHodSelectedSubjectIds(prev => [...prev, sub._id]);
-                                    } else {
-                                      setHodSelectedSubjectIds(prev => prev.filter(x => x !== sub._id));
-                                    }
-                                  }}
-                                  className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700 text-primary focus:ring-primary"
-                                />
-                                <span>{sub.subjectId} - {sub.name}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </>
-                      )}
+                        value={hodDailyAbsenteesDate}
+                        onChange={(e) => setHodDailyAbsenteesDate(e.target.value)}
+                        className="h-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                      />
                     </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-zinc-700 dark:text-zinc-300">From Date</Label>
-                    <Input
-                      type="date"
-                      disabled={!hodSelectedSemester}
-                      value={hodConsolidatedStartDate}
-                      onChange={(e) => setHodConsolidatedStartDate(e.target.value)}
-                      className="h-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-zinc-700 dark:text-zinc-300">To Date</Label>
-                    <Input
-                      type="date"
-                      disabled={!hodSelectedSemester}
-                      value={hodConsolidatedEndDate}
-                      onChange={(e) => setHodConsolidatedEndDate(e.target.value)}
-                      className="h-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
-                    />
-                  </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -5072,7 +5260,8 @@ export const DashboardHome = () => {
               <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
                 Please select Batch and Semester from dropdowns to display consolidated records.
               </div>
-            ) : hodConsolidatedLoading ? (
+            ) : consolidatedViewMode === "ledger" ? (
+              hodConsolidatedLoading ? (
               <div className="flex flex-col items-center justify-center p-24 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 space-y-4">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 dark:border-zinc-850 border-t-zinc-850 dark:border-t-zinc-200" />
                 <span className="text-zinc-500 text-xs font-semibold animate-pulse">Fetching consolidated records...</span>
@@ -5310,6 +5499,88 @@ export const DashboardHome = () => {
                   </table>
                 </div>
               </div>
+            ) ) : (
+              // Daily Absentees View Mode
+              hodDailyAbsenteesLoading ? (
+                <div className="flex flex-col items-center justify-center p-24 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 space-y-4">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 dark:border-zinc-850 border-t-zinc-850 dark:border-t-zinc-200" />
+                  <span className="text-zinc-500 text-xs font-semibold animate-pulse">Fetching daily absentees...</span>
+                </div>
+              ) : hodDailyAbsenteesList.length === 0 ? (
+                <div className="text-center p-12 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-950 text-zinc-500 italic text-xs">
+                  No absentees marked on this date.
+                </div>
+              ) : (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  {/* Search controls */}
+                  <div className="flex flex-col sm:flex-row gap-2 bg-zinc-50/50 dark:bg-zinc-900/10 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                      <Input
+                        type="text"
+                        placeholder="Search absentee student name, register number or admission number..."
+                        value={hodDailyAbsenteesSearchQuery}
+                        onChange={(e) => setHodDailyAbsenteesSearchQuery(e.target.value)}
+                        className="h-8 pl-8 text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Absentees Table */}
+                  <div className="overflow-x-auto border border-zinc-150 dark:border-zinc-850 rounded-lg bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-zinc-200 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/20 text-zinc-500 dark:text-zinc-400 font-semibold font-sans">
+                          <th className="py-2.5 px-3 text-center w-12 border-r border-zinc-200 dark:border-zinc-850">Sl. No.</th>
+                          <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Admission Number</th>
+                          <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Register Number</th>
+                          <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Student Name</th>
+                          <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Email</th>
+                          <th className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 font-semibold">Language Choice</th>
+                          <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Specialization</th>
+                          {hodDailyAbsenteesSubjects.map(sub => (
+                            <th key={sub._id} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 font-mono">
+                              {sub.subjectId}
+                              <div className="text-[9px] text-zinc-450 dark:text-zinc-500 font-normal truncate max-w-[120px] font-sans mt-0.5">{sub.name}</div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getFilteredDailyAbsenteesList().map((student, idx) => (
+                          <tr key={student._id} className="border-b border-zinc-150 dark:border-zinc-850 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20 animate-in fade-in duration-100">
+                            <td className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850">{idx + 1}</td>
+                            <td className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850 font-medium">{student.admissionNumber}</td>
+                            <td className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850 font-semibold">{student.studentId || '—'}</td>
+                            <td className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850 font-semibold">{student.fullName}</td>
+                            <td className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850 text-zinc-500">{student.email}</td>
+                            <td className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 uppercase">{student.language || 'N/A'}</td>
+                            <td className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">{student.specialization || 'General'}</td>
+                            {hodDailyAbsenteesSubjects.map(sub => {
+                              const statusVal = student.subjectStatus[sub._id];
+                              return (
+                                <td key={sub._id} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 font-mono font-semibold">
+                                  {statusVal === undefined ? (
+                                    <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                  ) : statusVal === 0 ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded font-extrabold bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400">
+                                      Absent (0)
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded font-extrabold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+                                      Present (1)
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
             )}
               </>
             ) : (

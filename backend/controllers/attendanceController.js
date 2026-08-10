@@ -786,3 +786,129 @@ exports.submitHODDailyAttendance = async (req, res) => {
   }
 };
 
+// Fetch daily absentees list for HOD
+exports.getDailyAbsentees = async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const { semesterId, sectionId, date } = req.query;
+
+    if (!semesterId || !date) {
+      return res.status(400).json({ success: false, message: 'semesterId and date are required' });
+    }
+
+    const Student = require('../models/Student');
+    const Subject = require('../models/Subject');
+    const Attendance = require('../models/Attendance');
+    const Allotment = require('../models/Allotment');
+
+    // Normalize date to UTC midnight
+    const targetDate = new Date(date);
+    targetDate.setUTCHours(0, 0, 0, 0);
+
+    // Get all subjects of this semester
+    const subjects = await Subject.find({ semester: semesterId });
+    const subjectIds = subjects.map(s => s._id);
+
+    // Get marked attendance registers for this date
+    const query = {
+      subject: { $in: subjectIds },
+      date: targetDate
+    };
+    if (sectionId && sectionId !== 'all' && sectionId !== 'null' && sectionId !== '') {
+      query.section = sectionId;
+    }
+    const attendances = await Attendance.find(query).populate('subject');
+
+    // Get students of this class & section
+    let studentQuery = { batch: batchId };
+    if (sectionId && sectionId !== 'all' && sectionId !== 'null' && sectionId !== '') {
+      const allotments = await Allotment.find({ semester: semesterId, section: sectionId });
+      const studentIds = allotments.map(a => a.student);
+      studentQuery._id = { $in: studentIds };
+    }
+    let students = await Student.find(studentQuery);
+
+    // Map active subjects that were actually taken (marked) on that day
+    const activeSubjects = attendances.map(a => ({
+      _id: a.subject._id,
+      subjectId: a.subject.subjectId,
+      name: a.subject.name,
+      subjectType: a.subject.subjectType,
+      language: a.subject.language,
+      specialization: a.subject.specialization
+    }));
+
+    const absentees = [];
+
+    for (const student of students) {
+      let isAbsentInAny = false;
+      const subjectStatus = {};
+
+      for (const att of attendances) {
+        const sub = att.subject;
+
+        // Skip if subject is language and student language doesn't match
+        if (sub.subjectType === 'language') {
+          const langCode = sub.subjectId.toUpperCase().trim();
+          if (!student.language) continue;
+          const studentLang = student.language.toUpperCase().trim();
+          const match = (
+            studentLang === langCode ||
+            langCode.startsWith(studentLang) ||
+            studentLang.startsWith(langCode) ||
+            (studentLang.length >= 3 && langCode.substring(0, 3) === studentLang.substring(0, 3))
+          );
+          if (!match) continue;
+        }
+
+        // Skip if subject is specialization and student specialization doesn't match
+        if (sub.subjectType === 'specialization') {
+          const specName = (sub.specialization || "").toLowerCase().trim();
+          if ((student.specialization || "").toLowerCase().trim() !== specName) {
+            continue;
+          }
+        }
+
+        // Find student record in this register
+        const record = att.records.find(r => r.student.toString() === student._id.toString());
+        // If marked absent, status is 0, else 1
+        const statusVal = (record && record.status === 'absent') ? 0 : 1;
+        subjectStatus[sub._id.toString()] = statusVal;
+
+        if (statusVal === 0) {
+          isAbsentInAny = true;
+        }
+      }
+
+      if (isAbsentInAny) {
+        absentees.push({
+          _id: student._id,
+          studentId: student.studentId,
+          admissionNumber: student.admissionNumber || 'N/A',
+          fullName: student.fullName,
+          email: student.email,
+          language: student.language,
+          specialization: student.specialization,
+          subjectStatus
+        });
+      }
+    }
+
+    // Sort absentees naturally by studentId (Roll No)
+    absentees.sort((a, b) => {
+      const idA = a.studentId || '';
+      const idB = b.studentId || '';
+      return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    return res.status(200).json({
+      success: true,
+      absentees,
+      activeSubjects
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
