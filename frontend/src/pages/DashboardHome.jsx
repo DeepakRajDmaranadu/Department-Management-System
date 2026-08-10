@@ -428,6 +428,7 @@ export const DashboardHome = () => {
   const [selectedFacultySemesterId, setSelectedFacultySemesterId] = useState("");
   const [selectedFacultySectionId, setSelectedFacultySectionId] = useState("");
   const [selectedFacultySubjectId, setSelectedFacultySubjectId] = useState("");
+  const [selectedFacultyBatchId, setSelectedFacultyBatchId] = useState("");
   const [selectedFacultyAllocId, setSelectedFacultyAllocId] = useState("");
   const [selectedFacultyDate, setSelectedFacultyDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedFacultySlot, setSelectedFacultySlot] = useState(1);
@@ -8504,19 +8505,29 @@ export const DashboardHome = () => {
       }
     } else if (effectiveRole === "Faculty") {
       if (window.location.pathname.endsWith("/grades")) {
-        const availableSemesters = myAllocations
+        const availableBatches = myAllocations
           .filter(a => a.course === selectedFacultyCourse)
+          .map(a => a.semester?.batch)
+          .filter((b, idx, self) => b && self.findIndex(x => x._id === b._id) === idx);
+
+        const availableSemesters = myAllocations
+          .filter(a => a.course === selectedFacultyCourse && a.semester?.batch?._id === selectedFacultyBatchId)
           .map(a => a.semester)
           .filter((sem, index, self) => sem && self.findIndex(s => s._id === sem._id) === index);
 
         const availableSections = myAllocations
-          .filter(a => a.course === selectedFacultyCourse && a.semester?._id === selectedFacultySemesterId)
+          .filter(a => 
+            a.course === selectedFacultyCourse && 
+            a.semester?.batch?._id === selectedFacultyBatchId &&
+            a.semester?._id === selectedFacultySemesterId
+          )
           .map(a => a.section)
           .filter((sec, index, self) => self.findIndex(s => (s?._id || "sem") === (sec?._id || "sem")) === index);
 
         const availableSubjects = myAllocations
           .filter(a => 
             a.course === selectedFacultyCourse && 
+            a.semester?.batch?._id === selectedFacultyBatchId &&
             a.semester?._id === selectedFacultySemesterId && 
             (a.section?._id || "semester-wide") === (selectedFacultySectionId || "semester-wide")
           )
@@ -8538,7 +8549,7 @@ export const DashboardHome = () => {
                   Select course details, subject allocation, and internal assessment test to record student scores.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-5 text-xs pb-4">
+              <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 text-xs pb-4">
                 {/* Course Filter */}
                 <div className="space-y-1">
                   <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Course / Department</Label>
@@ -8547,6 +8558,7 @@ export const DashboardHome = () => {
                     value={selectedFacultyCourse}
                     onChange={(e) => {
                       setSelectedFacultyCourse(e.target.value);
+                      setSelectedFacultyBatchId("");
                       setSelectedFacultySemesterId("");
                       setSelectedFacultySectionId("");
                       setFacultyIaSelectedSubjectId("");
@@ -8561,12 +8573,35 @@ export const DashboardHome = () => {
                   </select>
                 </div>
 
+                {/* Batch Filter */}
+                <div className="space-y-1">
+                  <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Batch</Label>
+                  <select
+                    className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
+                    value={selectedFacultyBatchId}
+                    onChange={(e) => {
+                      setSelectedFacultyBatchId(e.target.value);
+                      setSelectedFacultySemesterId("");
+                      setSelectedFacultySectionId("");
+                      setFacultyIaSelectedSubjectId("");
+                      setFacultyIaSelectedAssessmentId("");
+                      setFacultyIaMarksheet([]);
+                    }}
+                    disabled={!selectedFacultyCourse}
+                  >
+                    <option value="">-- Choose Batch --</option>
+                    {availableBatches.map(b => (
+                      <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Semester Filter */}
                 <div className="space-y-1">
                   <Label className="text-zinc-700 dark:text-zinc-300 font-semibold">Choose Semester</Label>
                   <select
                     className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
-                    disabled={!selectedFacultyCourse}
+                    disabled={!selectedFacultyBatchId}
                     value={selectedFacultySemesterId}
                     onChange={(e) => {
                       setSelectedFacultySemesterId(e.target.value);
@@ -8780,19 +8815,29 @@ export const DashboardHome = () => {
           </div>
         );
       } else if (window.location.pathname.endsWith("/assignments")) {
-        const availableSemesters = myAllocations
+        const availableBatches = myAllocations
           .filter(a => a.course === selectedFacultyCourse)
+          .map(a => a.semester?.batch)
+          .filter((b, idx, self) => b && self.findIndex(x => x._id === b._id) === idx);
+
+        const availableSemesters = myAllocations
+          .filter(a => a.course === selectedFacultyCourse && a.semester?.batch?._id === selectedFacultyBatchId)
           .map(a => a.semester)
           .filter((sem, index, self) => sem && self.findIndex(s => s._id === sem._id) === index);
 
         const availableSections = myAllocations
-          .filter(a => a.course === selectedFacultyCourse && a.semester?._id === selectedFacultySemesterId)
+          .filter(a => 
+            a.course === selectedFacultyCourse && 
+            a.semester?.batch?._id === selectedFacultyBatchId &&
+            a.semester?._id === selectedFacultySemesterId
+          )
           .map(a => a.section)
           .filter((sec, index, self) => self.findIndex(s => (s?._id || "sem") === (sec?._id || "sem")) === index);
 
         const availableSubjects = myAllocations
           .filter(a => 
             a.course === selectedFacultyCourse && 
+            a.semester?.batch?._id === selectedFacultyBatchId &&
             a.semester?._id === selectedFacultySemesterId && 
             (a.section?._id || "semester-wide") === (selectedFacultySectionId || "semester-wide")
           )
@@ -8812,7 +8857,7 @@ export const DashboardHome = () => {
                     Select Course, Subject/Section allocation to manage student coursework assignments.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
+                <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
                   {/* Course Filter Dropdown */}
                   <div className="space-y-1">
                     <Label className="text-zinc-700 dark:text-zinc-300 text-xs">Course / Department</Label>
@@ -8822,6 +8867,7 @@ export const DashboardHome = () => {
                       onChange={(e) => {
                         const courseVal = e.target.value;
                         setSelectedFacultyCourse(courseVal);
+                        setSelectedFacultyBatchId("");
                         setSelectedFacultySemesterId("");
                         setSelectedFacultySectionId("");
                         setSelectedFacultySubjectId("");
@@ -8831,6 +8877,29 @@ export const DashboardHome = () => {
                       <option value="">-- Select Course --</option>
                       {[...new Set(myAllocations.map(a => a.course))].sort().map(course => (
                         <option key={course} value={course}>{course}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Batch Dropdown */}
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300 text-xs">Batch</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
+                      value={selectedFacultyBatchId}
+                      onChange={(e) => {
+                        const batchVal = e.target.value;
+                        setSelectedFacultyBatchId(batchVal);
+                        setSelectedFacultySemesterId("");
+                        setSelectedFacultySectionId("");
+                        setSelectedFacultySubjectId("");
+                        setSelectedFacultyAllocId("");
+                      }}
+                      disabled={!selectedFacultyCourse}
+                    >
+                      <option value="">-- Select Batch --</option>
+                      {availableBatches.map(b => (
+                        <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
                       ))}
                     </select>
                   </div>
@@ -8848,7 +8917,7 @@ export const DashboardHome = () => {
                         setSelectedFacultySubjectId("");
                         setSelectedFacultyAllocId("");
                       }}
-                      disabled={!selectedFacultyCourse}
+                      disabled={!selectedFacultyBatchId}
                     >
                       <option value="">-- Select Semester --</option>
                       {availableSemesters.map(sem => (
@@ -9224,19 +9293,29 @@ export const DashboardHome = () => {
             </div>
         );
       } else {
-        const availableSemesters = myAllocations
+        const availableBatches = myAllocations
           .filter(a => a.course === selectedFacultyCourse)
+          .map(a => a.semester?.batch)
+          .filter((b, idx, self) => b && self.findIndex(x => x._id === b._id) === idx);
+
+        const availableSemesters = myAllocations
+          .filter(a => a.course === selectedFacultyCourse && a.semester?.batch?._id === selectedFacultyBatchId)
           .map(a => a.semester)
           .filter((sem, index, self) => sem && self.findIndex(s => s._id === sem._id) === index);
 
         const availableSections = myAllocations
-          .filter(a => a.course === selectedFacultyCourse && a.semester?._id === selectedFacultySemesterId)
+          .filter(a => 
+            a.course === selectedFacultyCourse && 
+            a.semester?.batch?._id === selectedFacultyBatchId &&
+            a.semester?._id === selectedFacultySemesterId
+          )
           .map(a => a.section)
           .filter((sec, index, self) => self.findIndex(s => (s?._id || "sem") === (sec?._id || "sem")) === index);
 
         const availableSubjects = myAllocations
           .filter(a => 
             a.course === selectedFacultyCourse && 
+            a.semester?.batch?._id === selectedFacultyBatchId &&
             a.semester?._id === selectedFacultySemesterId && 
             (a.section?._id || "semester-wide") === (selectedFacultySectionId || "semester-wide")
           )
@@ -9268,7 +9347,7 @@ export const DashboardHome = () => {
                     Select Course, Subject/Section allocation, and Date to mark daily student attendance.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+                <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 text-xs pb-4">
                   {/* Course Filter Dropdown */}
                   <div className="space-y-1">
                     <Label className="text-zinc-700 dark:text-zinc-300 text-xs">Course / Department</Label>
@@ -9278,6 +9357,7 @@ export const DashboardHome = () => {
                       onChange={(e) => {
                         const courseVal = e.target.value;
                         setSelectedFacultyCourse(courseVal);
+                        setSelectedFacultyBatchId("");
                         setSelectedFacultySemesterId("");
                         setSelectedFacultySectionId("");
                         setSelectedFacultySubjectId("");
@@ -9288,6 +9368,30 @@ export const DashboardHome = () => {
                       <option value="">-- Select Course --</option>
                       {[...new Set(myAllocations.map(a => a.course))].sort().map(course => (
                         <option key={course} value={course}>{course}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Batch Dropdown */}
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300 text-xs">Batch</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-3 py-1 text-xs shadow-sm focus-visible:outline-none"
+                      value={selectedFacultyBatchId}
+                      onChange={(e) => {
+                        const batchVal = e.target.value;
+                        setSelectedFacultyBatchId(batchVal);
+                        setSelectedFacultySemesterId("");
+                        setSelectedFacultySectionId("");
+                        setSelectedFacultySubjectId("");
+                        setSelectedFacultyAllocId("");
+                        setAttendanceStudents([]);
+                      }}
+                      disabled={!selectedFacultyCourse}
+                    >
+                      <option value="">-- Select Batch --</option>
+                      {availableBatches.map(b => (
+                        <option key={b._id} value={b._id}>{b.batchId} ({b.years})</option>
                       ))}
                     </select>
                   </div>
@@ -9306,7 +9410,7 @@ export const DashboardHome = () => {
                         setSelectedFacultyAllocId("");
                         setAttendanceStudents([]);
                       }}
-                      disabled={!selectedFacultyCourse}
+                      disabled={!selectedFacultyBatchId}
                     >
                       <option value="">-- Select Semester --</option>
                       {availableSemesters.map(sem => (

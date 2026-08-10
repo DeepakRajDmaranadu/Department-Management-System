@@ -10,7 +10,12 @@ exports.getMyAllocations = async (req, res) => {
   try {
     const allocations = await SubjectAllocation.find({ faculty: req.user._id })
       .populate('subject')
-      .populate('semester')
+      .populate({
+        path: 'semester',
+        populate: {
+          path: 'batch'
+        }
+      })
       .populate('section');
 
     return res.status(200).json({ success: true, data: allocations });
