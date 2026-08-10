@@ -9717,7 +9717,14 @@ export const DashboardHome = () => {
                                       s.fullName.toLowerCase().includes(facultyMarkSearch.toLowerCase()) ||
                                       (s.studentId || "").toLowerCase().includes(facultyMarkSearch.toLowerCase())
                                     ).map((student, studentIdx) => (
-                                      <tr key={student._id} className="border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10">
+                                      <tr
+                                        key={student._id}
+                                        className={`border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 transition-colors ${
+                                          student.status === 'absent'
+                                            ? 'bg-red-50/70 dark:bg-red-950/20 hover:bg-red-100/50 dark:hover:bg-red-950/30'
+                                            : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/10'
+                                        }`}
+                                      >
                                         <td className="py-2 px-3 font-mono font-semibold text-zinc-500">{student.admissionNumber || 'N/A'}</td>
                                         <td className="py-2 px-3 font-mono font-bold">{student.studentId || '—'}</td>
                                         <td className="py-2 px-3">{student.fullName}</td>
