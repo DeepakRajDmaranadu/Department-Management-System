@@ -57,7 +57,7 @@ export const DashboardLayout = ({ children }) => {
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
   const [passLoading, setPassLoading] = useState(false);
@@ -87,6 +87,18 @@ export const DashboardLayout = ({ children }) => {
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.add("dark");
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setIsSidebarOpen(true);
+      } else {
+        setIsSidebarOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const {
@@ -388,14 +400,14 @@ export const DashboardLayout = ({ children }) => {
         </header>
 
         {(user.role === "Admin" || user.role === "Principal" || user.role === "Office Assistant") && (
-          <div className="bg-zinc-50 dark:bg-zinc-950 border-b border-border px-8 py-3 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div className="bg-zinc-50 dark:bg-zinc-955 border-b border-border px-4 sm:px-8 py-3 flex flex-wrap items-center justify-between gap-4 text-xs">
             <div className="flex items-center space-x-2 font-medium text-zinc-700 dark:text-zinc-300">
               <span className="bg-primary/10 text-primary px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Scope</span>
               <span className="font-semibold text-zinc-900 dark:text-white">Active Organization Boundaries:</span>
             </div>
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-col sm:flex-row flex-wrap items-center gap-4 w-full sm:w-auto">
               {/* College Dropdown */}
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
                 <label className="text-zinc-500 font-semibold dark:text-zinc-400">College:</label>
                 <select
                   disabled={user.role === "Principal"}
@@ -404,7 +416,7 @@ export const DashboardLayout = ({ children }) => {
                     setAdminActiveCollege(e.target.value);
                     setAdminActiveCourse(""); // Reset course when college changes
                   }}
-                  className="flex h-8 w-60 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-80"
+                  className="flex h-8 w-full sm:w-60 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus-visible:outline-none disabled:opacity-80"
                 >
                   {user.role === "Principal" ? (
                     <option value={user.college}>{user.college}</option>
@@ -436,13 +448,13 @@ export const DashboardLayout = ({ children }) => {
               </div>
 
               {/* Course/Department Dropdown */}
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
                 <label className="text-zinc-500 font-semibold dark:text-zinc-400">Department:</label>
                 <select
                   disabled={!adminActiveCollege}
                   value={adminActiveCourse}
                   onChange={(e) => setAdminActiveCourse(e.target.value)}
-                  className="flex h-8 w-60 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none disabled:opacity-50"
+                  className="flex h-8 w-full sm:w-60 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus-visible:outline-none disabled:opacity-50"
                 >
                   <option value="">-- Select Department / Course --</option>
                   {coursesList
@@ -474,7 +486,7 @@ export const DashboardLayout = ({ children }) => {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">{children}</main>
       </div>
 
       {isPasswordModalOpen && (

@@ -10933,7 +10933,7 @@ export const DashboardHome = () => {
       {/* Modals for Edit / Delete operations */}
       {editingUser && (
         <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
             <CardHeader>
               <CardTitle className="text-base text-zinc-955 dark:text-white">Edit Staff Details</CardTitle>
               <CardDescription className="text-xs text-zinc-500">
@@ -10968,7 +10968,7 @@ export const DashboardHome = () => {
                     required
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <Label htmlFor="edit-role" className="text-zinc-700 dark:text-zinc-300">System Role</Label>
                     <select
@@ -11061,7 +11061,7 @@ export const DashboardHome = () => {
 
       {editingCourse && (
         <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
             <CardHeader>
               <CardTitle className="text-base text-zinc-955 dark:text-white">Edit Course / Department</CardTitle>
               <CardDescription className="text-xs text-zinc-500">
@@ -11132,7 +11132,7 @@ export const DashboardHome = () => {
 
       {editingCollege && (
         <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
             <CardHeader>
               <CardTitle className="text-base text-zinc-955 dark:text-white">Edit College Details</CardTitle>
               <CardDescription className="text-xs text-zinc-500">
