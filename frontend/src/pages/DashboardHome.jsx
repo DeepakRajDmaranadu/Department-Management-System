@@ -2600,7 +2600,7 @@ export const DashboardHome = () => {
 </style>
 </head>
 <body>
-  <div class="title">DAILY ABSENTEES REPORT</div>
+  <div class="title">DAILY ATTENDANCE LEDGER</div>
   <div><b>Date:</b> ${hodDailyAbsenteesDate}</div>
   <div><b>Batch:</b> ${hodSelectedBatch?.batchId} (${hodSelectedBatch?.years})</div>
   <div><b>Semester:</b> ${hodSelectedSemester?.name}</div>
@@ -2656,7 +2656,7 @@ export const DashboardHome = () => {
     const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `daily_absentees_${hodDailyAbsenteesDate}.xls`;
+    link.download = `daily_attendance_ledger_${hodDailyAbsenteesDate}.xls`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -5027,11 +5027,11 @@ export const DashboardHome = () => {
                       onClick={() => setConsolidatedViewMode("absentees")}
                       className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${
                         consolidatedViewMode === "absentees"
-                          ? "bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white shadow-sm"
+                          ? "bg-white dark:bg-zinc-955 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white shadow-sm"
                           : "text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
                       }`}
                     >
-                      Daily Absentees
+                      Daily Ledger
                     </button>
                   </div>
 
@@ -5069,7 +5069,7 @@ export const DashboardHome = () => {
                       className="text-xs h-8 px-3 border-emerald-250 hover:border-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 text-emerald-600 flex items-center space-x-1 font-semibold animate-in fade-in duration-200"
                     >
                       <FileSpreadsheet className="h-4 w-4" />
-                      <span>Export Absentees Report</span>
+                      <span>Export Daily Ledger</span>
                     </Button>
                   )}
                 </div>

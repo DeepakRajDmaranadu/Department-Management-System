@@ -875,23 +875,18 @@ exports.getDailyAbsentees = async (req, res) => {
         const statusVal = (record && record.status === 'absent') ? 0 : 1;
         subjectStatus[sub._id.toString()] = statusVal;
 
-        if (statusVal === 0) {
-          isAbsentInAny = true;
-        }
       }
 
-      if (isAbsentInAny) {
-        absentees.push({
-          _id: student._id,
-          studentId: student.studentId,
-          admissionNumber: student.admissionNumber || 'N/A',
-          fullName: student.fullName,
-          email: student.email,
-          language: student.language,
-          specialization: student.specialization,
-          subjectStatus
-        });
-      }
+      absentees.push({
+        _id: student._id,
+        studentId: student.studentId,
+        admissionNumber: student.admissionNumber || 'N/A',
+        fullName: student.fullName,
+        email: student.email,
+        language: student.language,
+        specialization: student.specialization,
+        subjectStatus
+      });
     }
 
     // Sort absentees naturally by studentId (Roll No)
