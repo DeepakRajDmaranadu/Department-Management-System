@@ -86,7 +86,7 @@ export const DashboardLayout = ({ children }) => {
 
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.add("dark");
+    root.classList.remove("dark");
   }, []);
 
   useEffect(() => {

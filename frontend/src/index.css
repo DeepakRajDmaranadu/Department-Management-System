@@ -4,33 +4,33 @@
 
 @layer base {
   :root, .dark {
-    --background: 222.2 84% 4.9%; /* #020617 (slate-955 / slate-950) */
-    --foreground: 210 40% 98%; /* #f8fafc (slate-50 / white) */
+    --background: 30 20% 98%; /* #fdfcfb (warm off-white) */
+    --foreground: 20 14% 4%; /* #0f0f0e (charcoal) */
 
-    --card: 222.2 47% 11%; /* #0f172a (slate-900) */
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 100%; /* #ffffff (white) */
+    --card-foreground: 20 14% 4%;
 
-    --popover: 222.2 47% 11%; /* #0f172a (slate-900) */
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14% 4%;
 
-    --primary: 215 25% 27%; /* #334155 (slate-700) */
-    --primary-foreground: 0 0% 100%; /* #ffffff (white) */
+    --primary: 20 14% 4%;
+    --primary-foreground: 0 0% 98%;
 
-    --secondary: 217.2 32.6% 17.5%; /* #1e293b (slate-800) */
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 30 10% 94%; /* #f2f0ec */
+    --secondary-foreground: 20 14% 4%;
 
-    --muted: 217.2 32.6% 17.5%; /* #1e293b (slate-800) */
-    --muted-foreground: 215 20.2% 65.1%; /* #94a3b8 (slate-400) */
+    --muted: 30 10% 94%;
+    --muted-foreground: 25 5% 45%; /* #767471 */
 
-    --accent: 217.2 32.6% 17.5%; /* #1e293b (slate-800) */
-    --accent-foreground: 210 40% 98%;
+    --accent: 30 10% 94%;
+    --accent-foreground: 20 14% 4%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 217.2 32.6% 17.5%; /* #1e293b (slate-800) */
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --border: 30 10% 90%; /* #e6e4e0 */
+    --input: 30 10% 90%;
+    --ring: 20 14% 4%;
 
     --radius: 0.6rem;
   }
@@ -98,35 +98,35 @@ table th, table td {
   border: 1.5px solid hsl(var(--border)) !important;
 }
 
-/* Sidebar Custom Styling (Dark Slate) */
+/* Sidebar Custom Styling (Off-White Theme) */
 aside {
-  background-color: #0f172a !important; /* slate-900 */
-  border-right: 1px solid #1e293b !important; /* slate-800 */
+  background-color: #faf9f6 !important; /* warm off-white */
+  border-right: 1px solid #e4e4e7 !important; /* zinc-200 */
 }
 aside span, aside div {
-  color: #f8fafc;
+  color: #18181b; /* zinc-900 */
 }
 aside a {
-  color: #94a3b8 !important; /* slate-400 */
+  color: #52525b !important; /* zinc-600 */
 }
 aside a:hover {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  color: #ffffff !important;
+  background-color: rgba(0, 0, 0, 0.04) !important;
+  color: #09090b !important;
 }
 aside a[class*="bg-zinc-100"] {
-  background-color: #1e293b !important; /* slate-800 active bg */
-  color: #ffffff !important;
-  border-color: #334155 !important; /* slate-700 active border */
+  background-color: #e4e4e7 !important; /* zinc-200 active bg */
+  color: #09090b !important;
+  border-color: #d4d4d8 !important; /* zinc-300 active border */
 }
 aside a[class*="bg-zinc-100"] * {
-  color: #ffffff !important;
+  color: #09090b !important;
 }
 aside button {
-  color: #94a3b8 !important;
+  color: #52525b !important;
 }
 aside button:hover {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  color: #ffffff !important;
+  background-color: rgba(0, 0, 0, 0.04) !important;
+  color: #09090b !important;
 }
 
 /* Excel Table selection styling */
