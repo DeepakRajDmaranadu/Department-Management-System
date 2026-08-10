@@ -44,6 +44,12 @@ const attendanceSchema = new mongoose.Schema(
       required: [true, 'Attendance date is required'],
     },
     records: [attendanceRecordSchema],
+    slot: {
+      type: Number,
+      default: 1,
+      min: 1,
+      max: 10,
+    },
     updatedByHOD: {
       type: Boolean,
       default: false,
@@ -54,7 +60,7 @@ const attendanceSchema = new mongoose.Schema(
   }
 );
 
-// Unique index: a subject can only have one attendance log per date and section (or null section)
-attendanceSchema.index({ subject: 1, date: 1, section: 1 }, { unique: true });
+// Unique index: a subject can only have one attendance log per date, section, and slot
+attendanceSchema.index({ subject: 1, date: 1, section: 1, slot: 1 }, { unique: true });
 
 module.exports = mongoose.model('Attendance', attendanceSchema);

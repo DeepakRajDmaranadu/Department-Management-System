@@ -381,6 +381,7 @@ export const DashboardHome = () => {
   const [hodAttendanceSubTab, setHodAttendanceSubTab] = useState("consolidated"); // consolidated or daily
   const [hodDailySelectedSubjectId, setHodDailySelectedSubjectId] = useState("");
   const [hodDailySelectedDate, setHodDailySelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [hodDailySelectedSlot, setHodDailySelectedSlot] = useState(1);
   const [hodDailyStudents, setHodDailyStudents] = useState([]);
   const [hodDailyIsMarked, setHodDailyIsMarked] = useState(false);
   const [hodDailyFacultyName, setHodDailyFacultyName] = useState("");
@@ -429,6 +430,7 @@ export const DashboardHome = () => {
   const [selectedFacultySubjectId, setSelectedFacultySubjectId] = useState("");
   const [selectedFacultyAllocId, setSelectedFacultyAllocId] = useState("");
   const [selectedFacultyDate, setSelectedFacultyDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedFacultySlot, setSelectedFacultySlot] = useState(1);
   const [attendanceStudents, setAttendanceStudents] = useState([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const attendanceSuccess = null;
@@ -1533,13 +1535,14 @@ export const DashboardHome = () => {
     }
   };
 
-  const fetchAttendanceStudents = async (allocId, dateVal) => {
+  const fetchAttendanceStudents = async (allocId, dateVal, slotVal) => {
     if (!allocId || !dateVal) return;
     setAttendanceSuccess(null);
     setAttendanceError(null);
     setAttendanceLoading(true);
     try {
-      const response = await api.get(`/api/attendance/students?allocationId=${allocId}&date=${dateVal}`);
+      const activeSlot = slotVal !== undefined ? slotVal : selectedFacultySlot;
+      const response = await api.get(`/api/attendance/students?allocationId=${allocId}&date=${dateVal}&slot=${activeSlot}`);
       if (response.data.success) {
         const sorted = [...response.data.data].sort((a, b) => {
           const regA = a.studentId || a.admissionNumber || "";
@@ -1577,13 +1580,14 @@ export const DashboardHome = () => {
       const response = await api.post("/api/attendance", {
         allocationId: selectedFacultyAllocId,
         date: selectedFacultyDate,
+        slot: selectedFacultySlot,
         records,
       });
 
       if (response.data.success) {
         setAttendanceSuccess(response.data.message || "Attendance recorded successfully!");
         setAttendanceIsMarked(true);
-        fetchAttendanceStudents(selectedFacultyAllocId, selectedFacultyDate);
+        fetchAttendanceStudents(selectedFacultyAllocId, selectedFacultyDate, selectedFacultySlot);
       }
     } catch (err) {
       console.error("Failed to submit attendance", err);
@@ -2103,7 +2107,7 @@ export const DashboardHome = () => {
         fetchAssignments(selectedFacultyAllocId);
       } else {
         if (facultyTab === "mark") {
-          fetchAttendanceStudents(selectedFacultyAllocId, selectedFacultyDate);
+          fetchAttendanceStudents(selectedFacultyAllocId, selectedFacultyDate, selectedFacultySlot);
         } else if (facultyTab === "consolidated") {
           fetchConsolidatedAttendance(selectedFacultyAllocId);
         } else if (facultyTab === "history") {
@@ -2113,7 +2117,7 @@ export const DashboardHome = () => {
         }
       }
     }
-  }, [selectedFacultyAllocId, facultyTab, selectedFacultyDate, window.location.pathname]);
+  }, [selectedFacultyAllocId, facultyTab, selectedFacultyDate, selectedFacultySlot, window.location.pathname]);
 
   const fetchHODSemesters = async (batchId) => {
     try {
@@ -2204,6 +2208,7 @@ export const DashboardHome = () => {
           semesterId: hodSelectedSemester._id,
           sectionId: hodSelectedSection === "all" ? "" : hodSelectedSection,
           date: hodDailySelectedDate,
+          slot: hodDailySelectedSlot
         }
       });
       if (response.data.success) {
@@ -2236,6 +2241,7 @@ export const DashboardHome = () => {
         semesterId: hodSelectedSemester._id,
         sectionId: hodSelectedSection === "all" ? "" : hodSelectedSection,
         date: hodDailySelectedDate,
+        slot: hodDailySelectedSlot,
         records,
       });
       if (response.data.success) {
@@ -2618,7 +2624,7 @@ export const DashboardHome = () => {
         <th>Specialization</th>`;
 
     hodDailyAbsenteesSubjects.forEach(sub => {
-      html += `<th class="center">${sub.subjectId}</th>`;
+      html += `<th class="center">${sub.subjectId} (P${sub.slot})</th>`;
     });
 
     html += `
@@ -2638,7 +2644,7 @@ export const DashboardHome = () => {
         <td>${row.specialization || 'General'}</td>`;
 
       hodDailyAbsenteesSubjects.forEach(sub => {
-        const val = row.subjectStatus[sub._id];
+        const val = row.subjectStatus[sub.attendanceId];
         const displayVal = val === undefined ? 'N/A' : (val === 0 ? 'Absent (0)' : 'Present (1)');
         html += `<td class="center">${displayVal}</td>`;
       });
@@ -2743,7 +2749,7 @@ export const DashboardHome = () => {
     if (hodAttendanceSubTab === "daily") {
       fetchHODDailyAttendance();
     }
-  }, [hodAttendanceSubTab, hodSelectedSemester?._id, hodSelectedSection, hodDailySelectedSubjectId, hodDailySelectedDate]);
+  }, [hodAttendanceSubTab, hodSelectedSemester?._id, hodSelectedSection, hodDailySelectedSubjectId, hodDailySelectedDate, hodDailySelectedSlot]);
 
   useEffect(() => {
     if (hodSelectedSemester) {
@@ -5539,8 +5545,11 @@ export const DashboardHome = () => {
                           <th className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 font-semibold">Language Choice</th>
                           <th className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">Specialization</th>
                           {hodDailyAbsenteesSubjects.map(sub => (
-                            <th key={sub._id} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 font-mono">
-                              {sub.subjectId}
+                            <th key={sub.attendanceId} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 font-mono">
+                              <span className="font-semibold">{sub.subjectId}</span>
+                              <span className="text-[9px] ml-1 bg-zinc-150 dark:bg-zinc-850 text-zinc-600 dark:text-zinc-400 px-1 py-0.5 rounded font-sans font-bold">
+                                P{sub.slot}
+                              </span>
                               <div className="text-[9px] text-zinc-450 dark:text-zinc-500 font-normal truncate max-w-[120px] font-sans mt-0.5">{sub.name}</div>
                             </th>
                           ))}
@@ -5557,9 +5566,9 @@ export const DashboardHome = () => {
                             <td className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 uppercase">{student.language || 'N/A'}</td>
                             <td className="py-2.5 px-3 border-r border-zinc-200 dark:border-zinc-850">{student.specialization || 'General'}</td>
                             {hodDailyAbsenteesSubjects.map(sub => {
-                              const statusVal = student.subjectStatus[sub._id];
+                              const statusVal = student.subjectStatus[sub.attendanceId];
                               return (
-                                <td key={sub._id} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 font-mono font-semibold">
+                                <td key={sub.attendanceId} className="py-2.5 px-3 text-center border-r border-zinc-200 dark:border-zinc-850 font-mono font-semibold">
                                   {statusVal === undefined ? (
                                     <span className="text-zinc-300 dark:text-zinc-700">—</span>
                                   ) : statusVal === 0 ? (
@@ -5597,7 +5606,7 @@ export const DashboardHome = () => {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-4 space-y-4">
-                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-5 text-xs">
+                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 text-xs">
                     <div className="space-y-1">
                       <Label className="text-zinc-755 dark:text-zinc-300">Choose Batch *</Label>
                       <select
@@ -5671,6 +5680,26 @@ export const DashboardHome = () => {
                         onChange={(e) => setHodDailySelectedDate(e.target.value)}
                         className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2"
                       />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-zinc-755 dark:text-zinc-300">Hour / Period *</Label>
+                      <select
+                        className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus:outline-none"
+                        value={hodDailySelectedSlot}
+                        onChange={(e) => setHodDailySelectedSlot(Number(e.target.value))}
+                      >
+                        <option value={1}>Period 1 (Hour 1)</option>
+                        <option value={2}>Period 2 (Hour 2)</option>
+                        <option value={3}>Period 3 (Hour 3)</option>
+                        <option value={4}>Period 4 (Hour 4)</option>
+                        <option value={5}>Period 5 (Hour 5)</option>
+                        <option value={6}>Period 6 (Hour 6)</option>
+                        <option value={7}>Period 7 (Hour 7)</option>
+                        <option value={8}>Period 8 (Hour 8)</option>
+                        <option value={9}>Period 9 (Hour 9)</option>
+                        <option value={10}>Period 10 (Hour 10)</option>
+                      </select>
                     </div>
                   </div>
 
@@ -9239,7 +9268,7 @@ export const DashboardHome = () => {
                     Select Course, Subject/Section allocation, and Date to mark daily student attendance.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-5">
+                <CardContent className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
                   {/* Course Filter Dropdown */}
                   <div className="space-y-1">
                     <Label className="text-zinc-700 dark:text-zinc-300 text-xs">Course / Department</Label>
@@ -9328,7 +9357,7 @@ export const DashboardHome = () => {
                           );
                           if (matchingAlloc) {
                             setSelectedFacultyAllocId(matchingAlloc._id);
-                            fetchAttendanceStudents(matchingAlloc._id, selectedFacultyDate);
+                            fetchAttendanceStudents(matchingAlloc._id, selectedFacultyDate, selectedFacultySlot);
                           } else {
                             setSelectedFacultyAllocId("");
                             setAttendanceStudents([]);
@@ -9357,11 +9386,38 @@ export const DashboardHome = () => {
                         const dateVal = e.target.value;
                         setSelectedFacultyDate(dateVal);
                         if (selectedFacultyAllocId) {
-                          fetchAttendanceStudents(selectedFacultyAllocId, dateVal);
+                          fetchAttendanceStudents(selectedFacultyAllocId, dateVal, selectedFacultySlot);
                         }
                       }}
                       className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
                     />
+                  </div>
+
+                  {/* Hour / Period Dropdown */}
+                  <div className="space-y-1">
+                    <Label className="text-zinc-700 dark:text-zinc-300 text-xs">Hour / Period</Label>
+                    <select
+                      className="flex h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white px-2 py-1 text-xs shadow-sm focus-visible:outline-none"
+                      value={selectedFacultySlot}
+                      onChange={(e) => {
+                        const slotVal = Number(e.target.value);
+                        setSelectedFacultySlot(slotVal);
+                        if (selectedFacultyAllocId) {
+                          fetchAttendanceStudents(selectedFacultyAllocId, selectedFacultyDate, slotVal);
+                        }
+                      }}
+                    >
+                      <option value={1}>Period 1 (Hour 1)</option>
+                      <option value={2}>Period 2 (Hour 2)</option>
+                      <option value={3}>Period 3 (Hour 3)</option>
+                      <option value={4}>Period 4 (Hour 4)</option>
+                      <option value={5}>Period 5 (Hour 5)</option>
+                      <option value={6}>Period 6 (Hour 6)</option>
+                      <option value={7}>Period 7 (Hour 7)</option>
+                      <option value={8}>Period 8 (Hour 8)</option>
+                      <option value={9}>Period 9 (Hour 9)</option>
+                      <option value={10}>Period 10 (Hour 10)</option>
+                    </select>
                   </div>
                 </CardContent>
               </Card>              {selectedFacultyAllocId && (

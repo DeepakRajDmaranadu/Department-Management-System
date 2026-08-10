@@ -22,7 +22,7 @@ exports.getMyAllocations = async (req, res) => {
 // Get students and their attendance status for an allocation and a date
 exports.getStudentsForAttendance = async (req, res) => {
   try {
-    const { allocationId, date } = req.query;
+    const { allocationId, date, slot } = req.query;
 
     if (!allocationId || !date) {
       return res.status(400).json({ success: false, message: 'allocationId and date are required' });
@@ -84,10 +84,12 @@ exports.getStudentsForAttendance = async (req, res) => {
     attendanceDate.setUTCHours(0, 0, 0, 0);
 
     // Look for existing attendance record
+    const targetSlot = slot ? Number(slot) : 1;
     const attendance = await Attendance.findOne({
       subject: subject._id,
       date: attendanceDate,
       section: allocation.section || null,
+      slot: targetSlot,
     });
 
     // Map students with attendance status
@@ -134,7 +136,7 @@ exports.getStudentsForAttendance = async (req, res) => {
 // Create or update student attendance
 exports.submitAttendance = async (req, res) => {
   try {
-    const { allocationId, date, records } = req.body;
+    const { allocationId, date, slot, records } = req.body;
 
     if (!allocationId || !date || !records || !Array.isArray(records)) {
       return res.status(400).json({ success: false, message: 'allocationId, date, and records are required' });
@@ -149,16 +151,20 @@ exports.submitAttendance = async (req, res) => {
     const attendanceDate = new Date(date);
     attendanceDate.setUTCHours(0, 0, 0, 0);
 
+    const targetSlot = slot ? Number(slot) : 1;
+
     // Find and update or insert new Attendance record
     const filter = {
       subject: allocation.subject,
       date: attendanceDate,
       section: allocation.section || null,
+      slot: targetSlot,
     };
 
     const update = {
       semester: allocation.semester,
       faculty: req.user._id,
+      slot: targetSlot,
       records: records.map(r => ({
         student: r.studentId,
         status: r.status,
@@ -611,7 +617,7 @@ exports.getConsolidatedAttendanceForHOD = async (req, res) => {
 // Fetch daily attendance roster and status for HOD
 exports.getHODDailyAttendance = async (req, res) => {
   try {
-    const { subjectId, semesterId, sectionId, date } = req.query;
+    const { subjectId, semesterId, sectionId, date, slot } = req.query;
 
     if (!subjectId || !semesterId || !date) {
       return res.status(400).json({ success: false, message: 'subjectId, semesterId, and date are required' });
@@ -675,10 +681,12 @@ exports.getHODDailyAttendance = async (req, res) => {
 
     // Look for existing attendance record
     const targetSectionId = (sectionId && sectionId !== 'all' && sectionId !== 'null' && sectionId !== '') ? sectionId : null;
+    const targetSlot = slot ? Number(slot) : 1;
     const attendance = await Attendance.findOne({
       subject: subjectId,
       date: attendanceDate,
       section: targetSectionId,
+      slot: targetSlot,
     }).populate('faculty', 'fullName');
 
     // Map students with attendance status
@@ -712,7 +720,7 @@ exports.getHODDailyAttendance = async (req, res) => {
 // Create or update daily attendance by HOD (bypassing 30-minute lock)
 exports.submitHODDailyAttendance = async (req, res) => {
   try {
-    const { subjectId, semesterId, sectionId, date, records } = req.body;
+    const { subjectId, semesterId, sectionId, date, slot, records } = req.body;
 
     if (!subjectId || !semesterId || !date || !records || !Array.isArray(records)) {
       return res.status(400).json({ success: false, message: 'subjectId, semesterId, date, and records are required' });
@@ -723,12 +731,14 @@ exports.submitHODDailyAttendance = async (req, res) => {
     attendanceDate.setUTCHours(0, 0, 0, 0);
 
     const targetSectionId = (sectionId && sectionId !== 'all' && sectionId !== 'null' && sectionId !== '') ? sectionId : null;
+    const targetSlot = slot ? Number(slot) : 1;
 
     // Find if record already exists
     const filter = {
       subject: subjectId,
       date: attendanceDate,
       section: targetSectionId,
+      slot: targetSlot,
     };
 
     const existing = await Attendance.findOne(filter);
@@ -752,6 +762,7 @@ exports.submitHODDailyAttendance = async (req, res) => {
     const update = {
       semester: semesterId,
       faculty: facultyId,
+      slot: targetSlot,
       records: records.map(r => {
         let isRecordUpdatedByHOD = false;
         if (existing) {
@@ -835,13 +846,17 @@ exports.getDailyAbsentees = async (req, res) => {
       name: a.subject.name,
       subjectType: a.subject.subjectType,
       language: a.subject.language,
-      specialization: a.subject.specialization
+      specialization: a.subject.specialization,
+      slot: a.slot || 1,
+      attendanceId: a._id.toString()
     }));
+
+    // Sort active subjects by slot chronologically
+    activeSubjects.sort((a, b) => a.slot - b.slot);
 
     const absentees = [];
 
     for (const student of students) {
-      let isAbsentInAny = false;
       const subjectStatus = {};
 
       for (const att of attendances) {
@@ -873,7 +888,7 @@ exports.getDailyAbsentees = async (req, res) => {
         const record = att.records.find(r => r.student.toString() === student._id.toString());
         // If marked absent, status is 0, else 1
         const statusVal = (record && record.status === 'absent') ? 0 : 1;
-        subjectStatus[sub._id.toString()] = statusVal;
+        subjectStatus[att._id.toString()] = statusVal;
 
       }
 
