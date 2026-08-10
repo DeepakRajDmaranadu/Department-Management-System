@@ -158,6 +158,7 @@ export const AuthProvider = ({ children }) => {
         setAdminActiveCourse,
       }}
     >
+    
       {children}
     </AuthContext.Provider>
   );
