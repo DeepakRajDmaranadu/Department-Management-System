@@ -9719,10 +9719,10 @@ export const DashboardHome = () => {
                                     ).map((student, studentIdx) => (
                                       <tr
                                         key={student._id}
-                                        className={`border-b border-zinc-100 dark:border-zinc-900 text-zinc-700 dark:text-zinc-300 transition-colors ${
+                                        className={`border-b border-zinc-100 dark:border-zinc-900 transition-colors ${
                                           student.status === 'absent'
-                                            ? 'bg-red-50/70 dark:bg-red-950/20 hover:bg-red-100/50 dark:hover:bg-red-950/30'
-                                            : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/10'
+                                            ? 'bg-red-100/90 dark:bg-red-950/70 hover:bg-red-200/60 dark:hover:bg-red-900/40 font-semibold text-red-900 dark:text-red-200'
+                                            : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/10'
                                         }`}
                                       >
                                         <td className="py-2 px-3 font-mono font-semibold text-zinc-500">{student.admissionNumber || 'N/A'}</td>
