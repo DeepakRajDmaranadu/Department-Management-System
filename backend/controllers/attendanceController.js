@@ -715,6 +715,7 @@ exports.getHODDailyAttendance = async (req, res) => {
       success: true,
       data,
       isMarked: !!attendance,
+      attendanceId: attendance ? attendance._id : null,
       facultyName: attendance ? (attendance.faculty?.fullName || 'Unknown Faculty') : 'Not Marked Yet',
     });
   } catch (error) {
@@ -920,6 +921,55 @@ exports.getDailyAbsentees = async (req, res) => {
       success: true,
       absentees,
       activeSubjects
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Delete daily attendance register (HOD/Admin anytime, Faculty within 30 minutes)
+exports.deleteAttendance = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userRole = req.user.role;
+    const userId = req.user._id;
+
+    const attendance = await Attendance.findById(id);
+    if (!attendance) {
+      return res.status(404).json({ success: false, message: 'Attendance record not found' });
+    }
+
+    // Role authorization check
+    if (userRole === 'Faculty') {
+      // Must be the faculty who created the register
+      if (attendance.faculty.toString() !== userId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to delete this register'
+        });
+      }
+
+      // Must be within 30 minutes of creation
+      const msPassed = Date.now() - new Date(attendance.createdAt).getTime();
+      const minutesPassed = msPassed / (1000 * 60);
+      if (minutesPassed > 30) {
+        return res.status(403).json({
+          success: false,
+          message: 'Faculty can only delete attendance registers within 30 minutes of creation'
+        });
+      }
+    } else if (userRole !== 'HOD' && userRole !== 'Admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not have permission to delete attendance registers'
+      });
+    }
+
+    await Attendance.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Attendance register deleted successfully'
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

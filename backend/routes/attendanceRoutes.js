@@ -10,6 +10,7 @@ const {
   getHODDailyAttendance,
   submitHODDailyAttendance,
   getDailyAbsentees,
+  deleteAttendance,
 } = require('../controllers/attendanceController');
 const { authenticateUser, authorizeRoles } = require('../middleware/authMiddleware');
 
@@ -30,5 +31,8 @@ router.get('/history', authorizeRoles('Faculty', 'HOD', 'Admin', 'Principal', 'O
 router.get('/my-allocations', authorizeRoles('Faculty'), getMyAllocations);
 router.get('/students', authorizeRoles('Faculty'), getStudentsForAttendance);
 router.post('/', authorizeRoles('Faculty'), submitAttendance);
+
+// Attendance deletion route
+router.delete('/:id', authorizeRoles('Faculty', 'HOD', 'Admin'), deleteAttendance);
 
 module.exports = router;

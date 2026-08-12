@@ -408,6 +408,7 @@ export const DashboardHome = () => {
   const [hodDailySelectedSlot, setHodDailySelectedSlot] = useState(1);
   const [hodDailyStudents, setHodDailyStudents] = useState([]);
   const [hodDailyIsMarked, setHodDailyIsMarked] = useState(false);
+  const [hodDailyAttendanceId, setHodDailyAttendanceId] = useState(null);
   const [hodDailyFacultyName, setHodDailyFacultyName] = useState("");
   const [hodDailyLoading, setHodDailyLoading] = useState(false);
   const [newBatchId, setNewBatchId] = useState("");
@@ -466,6 +467,7 @@ export const DashboardHome = () => {
   const [attendanceEditable, setAttendanceEditable] = useState(true);
   const [attendanceMinsRemaining, setAttendanceMinsRemaining] = useState(null);
   const [attendanceSubmitting, setAttendanceSubmitting] = useState(false);
+  const [attendanceDeletingId, setAttendanceDeletingId] = useState(null);
   const [facultyTab, setFacultyTab] = useState("mark");
   const [consolidatedData, setConsolidatedData] = useState([]);
   const [consolidatedLoading, setConsolidatedLoading] = useState(false);
@@ -1676,6 +1678,28 @@ export const DashboardHome = () => {
     }
   };
 
+  const onDeleteAttendance = async (attendanceId, isHOD = false) => {
+    if (!window.confirm("Are you sure you want to delete this daily attendance register? This action cannot be undone.")) return;
+    setAttendanceDeletingId(attendanceId);
+    try {
+      const response = await api.delete(`/api/attendance/${attendanceId}`);
+      if (response.data.success) {
+        toast.success("Attendance register deleted successfully.");
+        if (isHOD) {
+          fetchHODDailyAttendance();
+        } else {
+          fetchAttendanceHistory(selectedFacultyAllocId);
+          fetchAttendanceStudents(selectedFacultyAllocId, selectedFacultyDate, selectedFacultySlot);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete attendance", err);
+      toast.error(err.response?.data?.message || "Failed to delete attendance register.");
+    } finally {
+      setAttendanceDeletingId(null);
+    }
+  };
+
   const handleExcelColumnPaste = (e, startIndex) => {
     e.preventDefault();
     if (!attendanceEditable) return;
@@ -2301,6 +2325,7 @@ export const DashboardHome = () => {
         });
         setHodDailyStudents(sorted);
         setHodDailyIsMarked(response.data.isMarked);
+        setHodDailyAttendanceId(response.data.attendanceId || null);
         setHodDailyFacultyName(response.data.facultyName);
       }
     } catch (err) {
@@ -5944,7 +5969,18 @@ export const DashboardHome = () => {
                       </div>
 
                       {!isReadOnly && (
-                        <div className="flex justify-end pt-2">
+                        <div className="flex justify-end space-x-2 pt-2">
+                          {hodDailyIsMarked && hodDailyAttendanceId && (
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              onClick={() => onDeleteAttendance(hodDailyAttendanceId, true)}
+                              loading={attendanceDeletingId === hodDailyAttendanceId}
+                              className="text-xs h-9 font-semibold bg-red-655 hover:bg-red-750 text-white"
+                            >
+                              Delete Attendance Register
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             onClick={onSaveHODDailyAttendance}
@@ -10127,16 +10163,29 @@ export const DashboardHome = () => {
                                     <div className="flex items-center justify-between text-[10px] text-zinc-500 font-semibold">
                                       <span>Student List Details</span>
                                       {log.isEditable && !log.updatedByHOD ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setSelectedFacultyDate(log.date.split('T')[0]);
-                                            setFacultyTab("mark");
-                                          }}
-                                          className="text-zinc-900 dark:text-white underline hover:opacity-80"
-                                        >
-                                          Edit this register
-                                        </button>
+                                        <div className="flex items-center space-x-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedFacultyDate(log.date.split('T')[0]);
+                                              setFacultyTab("mark");
+                                            }}
+                                            className="text-zinc-900 dark:text-white underline hover:opacity-80"
+                                          >
+                                            Edit register
+                                          </button>
+                                          <span className="text-zinc-300 dark:text-zinc-700">|</span>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            loading={attendanceDeletingId === log._id}
+                                            onClick={() => onDeleteAttendance(log._id, false)}
+                                            className="h-auto p-0 text-red-500 hover:text-red-750 hover:bg-transparent border-transparent text-[10px] underline font-semibold flex items-center"
+                                          >
+                                            Delete register
+                                          </Button>
+                                        </div>
                                       ) : (
                                         <span className="text-zinc-400 dark:text-zinc-500 flex items-center space-x-1 cursor-default font-normal">
                                           <Lock className="h-2.5 w-2.5" />
