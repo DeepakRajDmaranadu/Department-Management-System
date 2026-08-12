@@ -5448,13 +5448,14 @@ export const DashboardHome = () => {
                                 onDragOver={(e) => handleDragOver(e, index)}
                                 onDragEnd={handleDragEnd}
                                 onDrop={(e) => handleDrop(e, index)}
-                                className={`py-1 px-2 text-center border-b border-r border-zinc-200 dark:border-zinc-850 cursor-grab active:cursor-grabbing select-none transition-all duration-150 ${
+                                className={`py-1.5 px-2 text-center border-b border-r border-zinc-200 dark:border-zinc-850 cursor-grab active:cursor-grabbing select-none transition-all duration-150 ${
                                   isDragOver ? 'bg-zinc-100 dark:bg-zinc-800 border-l-2 border-l-primary' : ''
                                 } ${isDragging ? 'opacity-40 scale-95' : ''}`}
                               >
-                                <div className="break-words whitespace-normal mx-auto font-semibold">Language</div>
+                                <div className="break-words whitespace-normal mx-auto font-semibold text-[11px]">Language Choice</div>
+                                <div className="break-words whitespace-normal mx-auto font-mono text-[9px] text-zinc-650 dark:text-zinc-400 font-bold mt-0.5">Code: Language</div>
                                 <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans break-words whitespace-normal mx-auto mt-0.5" title="Language Elective Faculty">
-                                  Language Staff
+                                  Staff: Language Staff
                                 </div>
                               </th>
                             );
@@ -5472,13 +5473,14 @@ export const DashboardHome = () => {
                               onDragOver={(e) => handleDragOver(e, index)}
                               onDragEnd={handleDragEnd}
                               onDrop={(e) => handleDrop(e, index)}
-                              className={`py-1 px-2 text-center font-mono border-b border-r border-zinc-200 dark:border-zinc-850 cursor-grab active:cursor-grabbing select-none transition-all duration-150 ${
+                              className={`py-1.5 px-2 text-center border-b border-r border-zinc-200 dark:border-zinc-850 cursor-grab active:cursor-grabbing select-none transition-all duration-150 ${
                                 isDragOver ? 'bg-zinc-100 dark:bg-zinc-800 border-l-2 border-l-primary' : ''
                               } ${isDragging ? 'opacity-40 scale-95' : ''}`}
                             >
-                              <div className="break-words whitespace-normal mx-auto">{sub.subjectId}</div>
+                              <div className="break-words whitespace-normal mx-auto font-semibold text-[11px]">{sub.name}</div>
+                              <div className="break-words whitespace-normal mx-auto font-mono text-[9px] text-zinc-650 dark:text-zinc-400 font-bold mt-0.5">Code: {sub.subjectId}</div>
                               <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-normal italic font-sans break-words whitespace-normal mx-auto mt-0.5" title={sub.facultyName}>
-                                {sub.facultyName}
+                                Staff: {sub.facultyName}
                               </div>
                             </th>
                           );

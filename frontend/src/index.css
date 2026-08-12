@@ -152,19 +152,17 @@ aside button:hover {
   /* Custom scrollbar styling for a cleaner look */
   scrollbar-width: thin;
 }
-.overflow-x-auto thead th {
+.overflow-x-auto thead {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 25;
+}
+.overflow-x-auto thead th {
   /* Use solid bg colors corresponding to light/dark modes to prevent row overlay bleed-through */
-  background-color: #f9fafb !important; /* light mode fallback */
+  background-color: #ffffff !important;
 }
 .dark .overflow-x-auto thead th {
-  background-color: #09090b !important; /* dark mode fallback */
-}
-/* For tables with dynamic double header structures (rowSpan) */
-.overflow-x-auto thead tr:nth-child(2) th {
-  top: 32px; /* offset top equal to the height of the first header row */
+  background-color: #09090b !important;
 }
 
 /* Animated Loading Dots */
