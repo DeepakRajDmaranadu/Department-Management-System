@@ -167,4 +167,20 @@ aside button:hover {
   top: 32px; /* offset top equal to the height of the first header row */
 }
 
+/* Animated Loading Dots */
+@keyframes loading-dots {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+  100% { content: ""; }
+}
+.loading-dots::after {
+  content: "";
+  display: inline-block;
+  text-align: left;
+  animation: loading-dots 1.5s infinite steps(4);
+  width: 0.75rem; /* prevent layout shift as dots animate */
+}
+
 

@@ -233,16 +233,10 @@ export const Login = () => {
               <Button
                 type="submit"
                 className="w-full bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all flex items-center justify-center space-x-2 shadow-sm"
-                disabled={isLoading}
+                loading={isLoading}
+                loadingText="Signing in"
               >
-                {isLoading ? (
-                  <>
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                    <span>Signing in...</span>
-                  </>
-                ) : (
-                  <span>Sign In</span>
-                )}
+                Sign In
               </Button>
             </CardFooter>
           </form>

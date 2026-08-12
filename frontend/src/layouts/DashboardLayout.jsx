@@ -552,10 +552,11 @@ export const DashboardLayout = ({ children }) => {
 
               <Button
                 type="submit"
-                disabled={passLoading}
+                loading={passLoading}
+                loadingText="Updating"
                 className="w-full bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 mt-2 font-medium"
               >
-                {passLoading ? "Updating..." : "Update Password"}
+                Update Password
               </Button>
             </form>
           </div>

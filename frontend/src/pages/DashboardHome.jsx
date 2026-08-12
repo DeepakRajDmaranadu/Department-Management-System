@@ -104,6 +104,30 @@ export const DashboardHome = () => {
   const [oaModalDepartments, setOaModalDepartments] = useState([]);
   const [isOaSaving, setIsOaSaving] = useState(false);
   
+  const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
+  const [batchDeletingId, setBatchDeletingId] = useState(null);
+  const [isStudentSubmitting, setIsStudentSubmitting] = useState(false);
+  const [studentDeletingId, setStudentDeletingId] = useState(null);
+  const [studentUpdatingId, setStudentUpdatingId] = useState(null);
+  const [studentBulkSubmitting, setStudentBulkSubmitting] = useState(false);
+  const [isSemesterSubmitting, setIsSemesterSubmitting] = useState(false);
+  const [semesterDeletingId, setSemesterDeletingId] = useState(null);
+  const [semesterUpdatingId, setSemesterUpdatingId] = useState(null);
+  const [isSectionSubmitting, setIsSectionSubmitting] = useState(false);
+  const [sectionDeletingId, setSectionDeletingId] = useState(null);
+  const [sectionUpdatingId, setSectionUpdatingId] = useState(null);
+  const [isSubjectSubmitting, setIsSubjectSubmitting] = useState(false);
+  const [subjectDeletingId, setSubjectDeletingId] = useState(null);
+  const [isAllocationSubmitting, setIsAllocationSubmitting] = useState(false);
+  const [allocationDeletingId, setAllocationDeletingId] = useState(null);
+  const [isAllotmentsSaving, setIsAllotmentsSaving] = useState(false);
+  const [isIaSubmitting, setIsIaSubmitting] = useState(false);
+  const [iaDeletingId, setIaDeletingId] = useState(null);
+  const [assignmentDeletingId, setAssignmentDeletingId] = useState(null);
+  const [userDeletingId, setUserDeletingId] = useState(null);
+  const [courseDeletingId, setCourseDeletingId] = useState(null);
+  const [collegeDeletingId, setCollegeDeletingId] = useState(null);
+  
   const successMsg = null;
   const setSuccessMsg = (msg) => { if (msg) toast.success(msg); };
   const errorMsg = null;
@@ -910,6 +934,7 @@ export const DashboardHome = () => {
       setBatchError("Batch ID and Years are required");
       return;
     }
+    setIsBatchSubmitting(true);
     try {
       const payload = {
         batchId: newBatchId,
@@ -928,6 +953,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to create batch");
+    } finally {
+      setIsBatchSubmitting(false);
     }
   };
 
@@ -937,6 +964,7 @@ export const DashboardHome = () => {
     }
     setBatchSuccess(null);
     setBatchError(null);
+    setBatchDeletingId(id);
     try {
       const response = await api.delete(`/api/batches/${id}`);
       if (response.data.success) {
@@ -949,6 +977,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to delete batch");
+    } finally {
+      setBatchDeletingId(null);
     }
   };
 
@@ -1022,6 +1052,7 @@ export const DashboardHome = () => {
     }
     setBatchSuccess(null);
     setBatchError(null);
+    setStudentUpdatingId(studentId);
     try {
       const response = await api.put(`/api/batches/students/${studentId}`, {
         admissionNumber: editStudentAdmissionNumber.trim(),
@@ -1038,10 +1069,13 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to update student");
+    } finally {
+      setStudentUpdatingId(null);
     }
   };
 
   const onDeleteStudent = async (studentId) => {
+    setStudentDeletingId(studentId);
     try {
       const impactRes = await api.get('/api/batches/delete-impact', {
         params: { type: 'student', id: studentId }
@@ -1058,6 +1092,7 @@ export const DashboardHome = () => {
       }
 
       if (!window.confirm(`Are you sure you want to delete this student? All academic records (attendance, internal assessment grades, assignments) will be permanently deleted.${impactMsg}`)) {
+        setStudentDeletingId(null);
         return;
       }
 
@@ -1070,6 +1105,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to delete student");
+    } finally {
+      setStudentDeletingId(null);
     }
   };
 
@@ -1081,6 +1118,7 @@ export const DashboardHome = () => {
       setBatchError("Admission number, name, email, and language are required");
       return;
     }
+    setIsStudentSubmitting(true);
     try {
       const response = await api.post(`/api/batches/${selectedBatch._id}/students`, {
         admissionNumber: newStudentAdmissionNumber,
@@ -1103,6 +1141,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to add student");
+    } finally {
+      setIsStudentSubmitting(false);
     }
   };
 
@@ -1200,6 +1240,7 @@ export const DashboardHome = () => {
       setBatchError("No parsed student data to upload.");
       return;
     }
+    setStudentBulkSubmitting(true);
     try {
       const response = await api.post(`/api/batches/${selectedBatch._id}/students/bulk`, {
         students: csvPreview,
@@ -1212,6 +1253,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Bulk upload failed");
+    } finally {
+      setStudentBulkSubmitting(false);
     }
   };
 
@@ -1223,6 +1266,7 @@ export const DashboardHome = () => {
       setBatchError("Semester name is required");
       return;
     }
+    setIsSemesterSubmitting(true);
     try {
       const response = await api.post(`/api/batches/${selectedBatch._id}/semesters`, {
         name: newSemesterName,
@@ -1234,6 +1278,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to create semester");
+    } finally {
+      setIsSemesterSubmitting(false);
     }
   };
 
@@ -1245,6 +1291,7 @@ export const DashboardHome = () => {
       setBatchError("Section name is required");
       return;
     }
+    setIsSectionSubmitting(true);
     try {
       const response = await api.post(`/api/batches/semesters/${selectedSemester._id}/sections`, {
         name: newSectionName,
@@ -1256,6 +1303,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to create section");
+    } finally {
+      setIsSectionSubmitting(false);
     }
   };
 
@@ -1266,6 +1315,7 @@ export const DashboardHome = () => {
     }
     setBatchSuccess(null);
     setBatchError(null);
+    setSemesterUpdatingId(id);
     try {
       const response = await api.put(`/api/batches/semesters/${id}`, {
         name: nameVal
@@ -1281,10 +1331,13 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to update semester");
+    } finally {
+      setSemesterUpdatingId(null);
     }
   };
 
   const onDeleteSemester = async (id) => {
+    setSemesterDeletingId(id);
     try {
       const impactRes = await api.get('/api/batches/delete-impact', {
         params: { type: 'semester', id }
@@ -1301,6 +1354,7 @@ export const DashboardHome = () => {
       }
 
       if (!window.confirm(`Are you sure you want to delete this semester? All associated subjects, sections, allotments, and marks sheets will be permanently deleted.${impactMsg}`)) {
+        setSemesterDeletingId(null);
         return;
       }
 
@@ -1318,6 +1372,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to delete semester");
+    } finally {
+      setSemesterDeletingId(null);
     }
   };
 
@@ -1328,6 +1384,7 @@ export const DashboardHome = () => {
     }
     setBatchSuccess(null);
     setBatchError(null);
+    setSectionUpdatingId(id);
     try {
       const response = await api.put(`/api/batches/sections/${id}`, {
         name: nameVal
@@ -1340,10 +1397,13 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to update section");
+    } finally {
+      setSectionUpdatingId(null);
     }
   };
 
   const onDeleteSection = async (id) => {
+    setSectionDeletingId(id);
     try {
       const impactRes = await api.get('/api/batches/delete-impact', {
         params: { type: 'section', id }
@@ -1360,6 +1420,7 @@ export const DashboardHome = () => {
       }
 
       if (!window.confirm(`Are you sure you want to delete this section? Associated allocations and students allotments will be cleaned up.${impactMsg}`)) {
+        setSectionDeletingId(null);
         return;
       }
 
@@ -1372,6 +1433,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to delete section");
+    } finally {
+      setSectionDeletingId(null);
     }
   };
 
@@ -1383,6 +1446,7 @@ export const DashboardHome = () => {
       setAllocError("Subject ID and Name are required");
       return;
     }
+    setIsSubjectSubmitting(true);
     try {
       if (editingSubject) {
         const response = await api.put(`/api/subjects/${editingSubject._id}`, {
@@ -1427,12 +1491,15 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setAllocError(err.response?.data?.message || "Failed to save subject");
+    } finally {
+      setIsSubjectSubmitting(false);
     }
   };
 
   const onDeleteSubject = async (subjectId) => {
     setAllocSuccess(null);
     setAllocError(null);
+    setSubjectDeletingId(subjectId);
     try {
       const response = await api.delete(`/api/subjects/${subjectId}`);
       if (response.data.success) {
@@ -1443,6 +1510,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setAllocError(err.response?.data?.message || "Failed to delete subject");
+    } finally {
+      setSubjectDeletingId(null);
     }
   };
 
@@ -1454,6 +1523,7 @@ export const DashboardHome = () => {
       setAllocError("Subject and Faculty selection are required");
       return;
     }
+    setIsAllocationSubmitting(true);
     try {
       if (editingAllocation) {
         const response = await api.put(`/api/subjects/allocations/${editingAllocation._id}`, {
@@ -1491,12 +1561,15 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setAllocError(err.response?.data?.message || "Failed to save allocation");
+    } finally {
+      setIsAllocationSubmitting(false);
     }
   };
 
   const onDeleteSubjectAllocation = async (allocationId) => {
     setAllocSuccess(null);
     setAllocError(null);
+    setAllocationDeletingId(allocationId);
     try {
       const response = await api.delete(`/api/subjects/allocations/${allocationId}`);
       if (response.data.success) {
@@ -1505,12 +1578,15 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setAllocError(err.response?.data?.message || "Failed to delete allocation");
+    } finally {
+      setAllocationDeletingId(null);
     }
   };
 
   const onSaveAllotments = async (updatedAllotments) => {
     setBatchSuccess(null);
     setBatchError(null);
+    setIsAllotmentsSaving(true);
     try {
       const response = await api.post(`/api/batches/semesters/${selectedSemester._id}/allotments`, {
         allotments: updatedAllotments,
@@ -1521,6 +1597,8 @@ export const DashboardHome = () => {
       }
     } catch (err) {
       setBatchError(err.response?.data?.message || "Failed to save student allotments");
+    } finally {
+      setIsAllotmentsSaving(false);
     }
   };
 
@@ -1755,6 +1833,7 @@ export const DashboardHome = () => {
 
   const handleDeleteAssignment = async (assignmentId) => {
     if (!window.confirm("Are you sure you want to delete this assignment?")) return;
+    setAssignmentDeletingId(assignmentId);
     try {
       const response = await api.delete(`/api/assignments/${assignmentId}`);
       if (response.data.success) {
@@ -1764,6 +1843,8 @@ export const DashboardHome = () => {
     } catch (err) {
       console.error("Failed to delete assignment", err);
       toast.error(err.response?.data?.message || "Failed to delete assignment");
+    } finally {
+      setAssignmentDeletingId(null);
     }
   };
 
@@ -3114,7 +3195,7 @@ export const DashboardHome = () => {
       toast.error("Please select Batch and Semester.");
       return;
     }
-
+    setIsIaSubmitting(true);
     try {
       const payload = {
         title: hodIaTitle.trim(),
@@ -3135,11 +3216,14 @@ export const DashboardHome = () => {
     } catch (err) {
       console.error("Failed to create internal assessment", err);
       toast.error(err.response?.data?.message || "Failed to create assessment.");
+    } finally {
+      setIsIaSubmitting(false);
     }
   };
 
   const deleteHODInternalAssessment = async (id) => {
     if (!window.confirm("Are you sure you want to delete this internal assessment and all submitted marks?")) return;
+    setIaDeletingId(id);
     try {
       const response = await api.delete(`/api/internal-assessments/${id}`);
       if (response.data.success) {
@@ -3151,6 +3235,8 @@ export const DashboardHome = () => {
     } catch (err) {
       console.error("Failed to delete internal assessment", err);
       toast.error("Failed to delete assessment.");
+    } finally {
+      setIaDeletingId(null);
     }
   };
 
@@ -4761,8 +4847,8 @@ export const DashboardHome = () => {
                                 />
                               </div>
                             )}
-                            <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 w-full">
-                              Create Subject
+                            <Button type="submit" size="sm" loading={isSubjectSubmitting} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 w-full">
+                              {editingSubject ? "Save Subject" : "Create Subject"}
                             </Button>
                           </form>
                         </CardContent>
@@ -4810,13 +4896,16 @@ export const DashboardHome = () => {
                                       >
                                         <Edit className="h-3.5 w-3.5" />
                                       </button>
-                                      <button
+                                      <Button
                                         type="button"
+                                        variant="ghost"
+                                        size="icon"
                                         onClick={() => onDeleteSubject(sub._id)}
-                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-1 rounded"
+                                        loading={subjectDeletingId === sub._id}
+                                        className="h-7 w-7 text-red-500 hover:text-red-750 hover:bg-red-50 dark:hover:bg-red-950/20 border-transparent p-0"
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
+                                      </Button>
                                     </td>
                                     )}
                                   </tr>
@@ -4883,8 +4972,8 @@ export const DashboardHome = () => {
                                 </select>
                               </div>
                               <div className={`${sections.length > 0 ? "sm:col-span-3" : "sm:col-span-2"} pt-2`}>
-                                <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 w-full">
-                                  Assign Faculty member
+                                <Button type="submit" size="sm" loading={isAllocationSubmitting} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 w-full">
+                                  {editingAllocation ? "Save Allocation" : "Assign Faculty member"}
                                 </Button>
                               </div>
                             </form>
@@ -4940,13 +5029,16 @@ export const DashboardHome = () => {
                                         >
                                           <Edit className="h-3.5 w-3.5" />
                                         </button>
-                                        <button
+                                        <Button
                                           type="button"
+                                          variant="ghost"
+                                          size="icon"
                                           onClick={() => onDeleteSubjectAllocation(alloc._id)}
-                                          className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-1 rounded"
+                                          loading={allocationDeletingId === alloc._id}
+                                          className="h-7 w-7 text-red-500 hover:text-red-750 hover:bg-red-50 dark:hover:bg-red-950/20 border-transparent p-0"
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
+                                        </Button>
                                       </td>
                                     )}
                                   </tr>
@@ -6448,7 +6540,7 @@ export const DashboardHome = () => {
                             </select>
                           </div>
 
-                          <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 w-full h-8">
+                          <Button type="submit" size="sm" loading={isIaSubmitting} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 w-full h-8">
                             Create Assessment
                           </Button>
                         </form>
@@ -6497,13 +6589,16 @@ export const DashboardHome = () => {
                                     <td className="py-2 px-3 text-zinc-500 dark:text-zinc-450">{new Date(ia.createdAt).toLocaleDateString()}</td>
                                     {!isReadOnly && (
                                       <td className="py-2 px-3 text-right">
-                                        <button
+                                        <Button
                                           type="button"
+                                          variant="ghost"
+                                          size="icon"
                                           onClick={() => deleteHODInternalAssessment(ia._id)}
-                                          className="text-red-500 hover:text-red-700 hover:bg-red-550/20 dark:hover:bg-red-950/20 p-1 rounded"
+                                          loading={iaDeletingId === ia._id}
+                                          className="h-7 w-7 text-red-500 hover:text-red-750 hover:bg-red-50 dark:hover:bg-red-950/20 border-transparent p-0 inline-flex items-center justify-center"
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
+                                        </Button>
                                       </td>
                                     )}
                                   </tr>
@@ -6707,12 +6802,12 @@ export const DashboardHome = () => {
                               <Button
                                 type="button"
                                 size="sm"
-                                disabled={dynIaSaving}
+                                loading={dynIaSaving}
                                 className="h-8 bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs font-semibold flex items-center space-x-1"
                                 onClick={saveDynIaSheetConfig}
                               >
                                 <CheckCircle className="h-4 w-4" />
-                                <span>{dynIaSaving ? "Saving..." : "Save Sheet Config"}</span>
+                                Save Sheet Config
                               </Button>
                             )}
                           </div>
@@ -7653,7 +7748,7 @@ export const DashboardHome = () => {
                             />
                           </div>
                         </div>
-                        <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200">
+                        <Button type="submit" size="sm" loading={isBatchSubmitting} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200">
                           Create Batch
                         </Button>
                       </form>
@@ -7696,6 +7791,7 @@ export const DashboardHome = () => {
                                       type="button"
                                       variant="ghost"
                                       size="icon"
+                                      loading={batchDeletingId === b._id}
                                       onClick={() => onDeleteBatch(b._id)}
                                       className="h-7 w-7 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-955/20"
                                     >
@@ -7868,7 +7964,7 @@ export const DashboardHome = () => {
                                   ))}
                                 </select>
                               </div>
-                              <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200">
+                              <Button type="submit" size="sm" loading={isStudentSubmitting} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200">
                                 Register Student
                               </Button>
                             </form>                            {/* CSV Bulk Upload Form */}
@@ -7918,7 +8014,7 @@ export const DashboardHome = () => {
                                   Parse Text
                                 </Button>
                                 {csvPreview.length > 0 && (
-                                  <Button type="button" size="sm" onClick={onUploadBulkStudents} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8">
+                                  <Button type="button" size="sm" onClick={onUploadBulkStudents} loading={studentBulkSubmitting} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8">
                                     Upload Bulk ({csvPreview.length})
                                   </Button>
                                 )}
@@ -8015,6 +8111,7 @@ export const DashboardHome = () => {
                                                   type="button"
                                                   size="xs"
                                                   onClick={() => onUpdateStudent(s._id)}
+                                                  loading={studentUpdatingId === s._id}
                                                   className="h-7 px-2.5 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
                                                 >
                                                   Save
@@ -8063,6 +8160,7 @@ export const DashboardHome = () => {
                                                       size="xs"
                                                       variant="destructive"
                                                       onClick={() => onDeleteStudent(s._id)}
+                                                      loading={studentDeletingId === s._id}
                                                       className="h-6 px-2 text-[10px] bg-red-600 hover:bg-red-750 text-white border-transparent"
                                                     >
                                                       Delete
@@ -8103,7 +8201,7 @@ export const DashboardHome = () => {
                                       onChange={(e) => setNewSemesterName(e.target.value)}
                                       className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
                                     />
-                                    <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 shrink-0">
+                                    <Button type="submit" size="sm" loading={isSemesterSubmitting} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 shrink-0">
                                       Add Semester
                                     </Button>
                                   </div>
@@ -8130,6 +8228,7 @@ export const DashboardHome = () => {
                                               type="button"
                                               size="xs"
                                               onClick={() => onUpdateSemester(s._id, editSemesterName)}
+                                              loading={semesterUpdatingId === s._id}
                                               className="h-7 px-2 text-[10px]"
                                             >
                                               Save
@@ -8169,6 +8268,7 @@ export const DashboardHome = () => {
                                                   size="xs"
                                                   variant="destructive"
                                                   onClick={() => onDeleteSemester(s._id)}
+                                                  loading={semesterDeletingId === s._id}
                                                   className="h-6 px-1.5 text-[10px] bg-red-600 hover:bg-red-750 text-white border-transparent"
                                                 >
                                                   Delete
@@ -8217,7 +8317,7 @@ export const DashboardHome = () => {
                                           onChange={(e) => setNewSectionName(e.target.value)}
                                           className="h-8 text-xs border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500"
                                         />
-                                        <Button type="submit" size="sm" className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 shrink-0">
+                                        <Button type="submit" size="sm" loading={isSectionSubmitting} className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8 shrink-0">
                                           Add Section
                                         </Button>
                                       </div>
@@ -8244,6 +8344,7 @@ export const DashboardHome = () => {
                                                   type="button"
                                                   size="xs"
                                                   onClick={() => onUpdateSection(sec._id, editSectionName)}
+                                                  loading={sectionUpdatingId === sec._id}
                                                   className="h-7 px-2 text-[10px]"
                                                 >
                                                   Save
@@ -8283,6 +8384,7 @@ export const DashboardHome = () => {
                                                       size="xs"
                                                       variant="destructive"
                                                       onClick={() => onDeleteSection(sec._id)}
+                                                      loading={sectionDeletingId === sec._id}
                                                       className="h-6 px-1.5 text-[10px] bg-red-600 hover:bg-red-750 text-white border-transparent"
                                                     >
                                                       Delete
@@ -8412,6 +8514,7 @@ export const DashboardHome = () => {
                                       }));
                                       onSaveAllotments(list);
                                     }}
+                                    loading={isAllotmentsSaving}
                                     className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs h-8"
                                   >
                                     Save Assignments
@@ -8793,21 +8896,12 @@ export const DashboardHome = () => {
                 <div className="flex justify-end pt-2">
                   <Button
                     type="button"
-                    disabled={facultyIaSaving}
+                    loading={facultyIaSaving}
                     onClick={submitFacultyIaMarks}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 text-xs h-9 px-6 flex items-center space-x-2 font-semibold shadow-sm rounded-md"
                   >
-                    {facultyIaSaving ? (
-                      <>
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                        <span>Saving Marks...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4" />
-                        <span>Save Assessment Marks</span>
-                      </>
-                    )}
+                    <CheckCircle className="h-4 w-4" />
+                    Save Assessment Marks
                   </Button>
                 </div>
               </div>
@@ -9064,11 +9158,11 @@ export const DashboardHome = () => {
 
                         <Button
                           type="submit"
-                          disabled={isAssignmentSubmitting}
+                          loading={isAssignmentSubmitting}
                           size="sm"
                           className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2 px-4 py-1.5 text-xs font-semibold shadow-sm"
                         >
-                          {isAssignmentSubmitting ? "Creating..." : "Save Assignment"}
+                          Save Assignment
                         </Button>
                       </form>
                     ) : (
@@ -9143,16 +9237,19 @@ export const DashboardHome = () => {
                                       <div>
                                         <div className="flex items-start justify-between">
                                           <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate pr-2">{assign.title}</h4>
-                                          <button
+                                          <Button
                                             type="button"
+                                            variant="ghost"
+                                            size="sm"
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               handleDeleteAssignment(assign._id);
                                             }}
-                                            className="text-red-500 hover:text-red-700 text-[10px] shrink-0"
+                                            loading={assignmentDeletingId === assign._id}
+                                            className="h-6 text-red-500 hover:text-red-750 hover:bg-red-50 dark:hover:bg-red-950/20 border-transparent text-[10px] shrink-0 p-1 font-semibold"
                                           >
                                             Delete
-                                          </button>
+                                          </Button>
                                         </div>
                                         <p className="text-[10px] text-zinc-500 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
                                       </div>
@@ -9799,10 +9896,11 @@ export const DashboardHome = () => {
                             <Button
                               type="submit"
                               size="sm"
-                              disabled={attendanceSubmitting || !attendanceEditable}
+                              disabled={!attendanceEditable}
+                              loading={attendanceSubmitting}
                               className="bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 w-full"
                             >
-                              {attendanceSubmitting ? "Saving Attendance..." : (attendanceIsMarked ? (attendanceEditable ? "Update Attendance Register" : "Attendance Register Locked") : "Submit Attendance Register")}
+                              {attendanceIsMarked ? (attendanceEditable ? "Update Attendance Register" : "Attendance Register Locked") : "Submit Attendance Register"}
                             </Button>
                           </form>
                         )}
@@ -10167,11 +10265,11 @@ export const DashboardHome = () => {
 
                         <Button
                           type="submit"
-                          disabled={isAssignmentSubmitting}
+                          loading={isAssignmentSubmitting}
                           size="sm"
                           className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2 px-4 py-1.5 text-xs font-semibold shadow-sm"
                         >
-                          {isAssignmentSubmitting ? "Creating..." : "Save Assignment"}
+                          Save Assignment
                         </Button>
                       </form>
                     ) : (
@@ -10246,16 +10344,19 @@ export const DashboardHome = () => {
                                       <div>
                                         <div className="flex items-start justify-between">
                                           <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate pr-2">{assign.title}</h4>
-                                          <button
+                                          <Button
                                             type="button"
+                                            variant="ghost"
+                                            size="sm"
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               handleDeleteAssignment(assign._id);
                                             }}
-                                            className="text-red-500 hover:text-red-700 text-[10px] shrink-0"
+                                            loading={assignmentDeletingId === assign._id}
+                                            className="h-6 text-red-500 hover:text-red-750 hover:bg-red-50 dark:hover:bg-red-950/20 border-transparent text-[10px] shrink-0 p-1 font-semibold"
                                           >
                                             Delete
-                                          </button>
+                                          </Button>
                                         </div>
                                         <p className="text-[10px] text-zinc-500 dark:text-zinc-500 line-clamp-1 mt-0.5">{assign.description || 'No description'}</p>
                                       </div>

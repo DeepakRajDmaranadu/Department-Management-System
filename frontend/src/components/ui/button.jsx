@@ -2,7 +2,29 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 const Button = React.forwardRef(
-  ({ className, variant = "default", size = "default", ...props }, ref) => {
+  ({ className, variant = "default", size = "default", loading, loadingText, children, disabled, ...props }, ref) => {
+    // Helper to get loading text dynamically from string children
+    const getLoadingText = () => {
+      if (loadingText) return loadingText;
+      if (typeof children === "string") {
+        const text = children.trim().toLowerCase();
+        if (text.startsWith("create")) return "Creating";
+        if (text.startsWith("update")) return "Updating";
+        if (text.startsWith("delete")) return "Deleting";
+        if (text.startsWith("save")) return "Saving";
+        if (text.startsWith("submit")) return "Submitting";
+        if (text.startsWith("login") || text.includes("sign in")) return "Signing in";
+        if (text.startsWith("logout") || text.includes("sign out")) return "Signing out";
+        if (text.startsWith("upload")) return "Uploading";
+        if (text.startsWith("send")) return "Sending";
+        if (text.startsWith("approve")) return "Approving";
+        if (text.startsWith("reject")) return "Rejecting";
+        if (text.startsWith("generate")) return "Generating";
+        if (text.startsWith("export")) return "Exporting";
+      }
+      return "Processing";
+    };
+
     return (
       <button
         className={cn(
@@ -28,8 +50,19 @@ const Button = React.forwardRef(
           className
         )}
         ref={ref}
+        disabled={disabled || loading}
         {...props}
-      />
+      >
+        {loading ? (
+          <>
+            <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent shrink-0" />
+            <span>{getLoadingText()}</span>
+            <span className="loading-dots" />
+          </>
+        ) : (
+          children
+        )}
+      </button>
     )
   }
 )
