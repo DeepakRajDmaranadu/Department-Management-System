@@ -5978,7 +5978,7 @@ export const DashboardHome = () => {
                               variant="destructive"
                               onClick={() => onDeleteAttendance(hodDailyAttendanceId, true)}
                               loading={attendanceDeletingId === hodDailyAttendanceId}
-                              className="text-xs h-9 font-semibold bg-red-655 hover:bg-red-750 text-white"
+                              className="text-xs h-9 font-bold bg-red-600 hover:bg-red-700 text-white dark:bg-red-600 dark:hover:bg-red-700 dark:text-white px-4 shadow-sm"
                             >
                               Delete Attendance Register
                             </Button>
@@ -10183,7 +10183,7 @@ export const DashboardHome = () => {
                                             size="sm"
                                             loading={attendanceDeletingId === log._id}
                                             onClick={() => onDeleteAttendance(log._id, false)}
-                                            className="h-auto p-0 text-red-500 hover:text-red-750 hover:bg-transparent border-transparent text-[10px] underline font-semibold flex items-center"
+                                            className="h-auto p-0 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-transparent border-transparent text-[10px] underline font-semibold flex items-center"
                                           >
                                             Delete register
                                           </Button>
